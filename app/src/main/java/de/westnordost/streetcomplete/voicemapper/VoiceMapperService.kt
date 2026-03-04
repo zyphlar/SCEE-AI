@@ -96,6 +96,13 @@ class VoiceMapperService(
     private val _commandLog = MutableStateFlow<List<String>>(emptyList())
     val commandLog: StateFlow<List<String>> = _commandLog
 
+    /** Set by VoiceMapperOverlay when a pending-edit pin is tapped; observed by VoiceMapperFragment. */
+    private val _openEditRequest = MutableStateFlow<String?>(null)
+    val openEditRequest: StateFlow<String?> = _openEditRequest
+
+    fun requestOpenEdit(editId: String) { _openEditRequest.value = editId }
+    fun clearOpenEditRequest() { _openEditRequest.value = null }
+
     private fun logCommand(entry: String) {
         _commandLog.value = (listOf(entry) + _commandLog.value).take(10)
     }
@@ -557,10 +564,12 @@ class VoiceMapperService(
         var candidates: List<Element> = nearbyData.toList()
             .filter { it.tags.isNotEmpty() }
 
-        // Filter by required tags
+        // Filter by required tags; value "*" means "tag must exist with any value"
         if (edit.elementSearchTags.isNotEmpty()) {
             candidates = candidates.filter { element ->
-                edit.elementSearchTags.all { (k, v) -> element.tags[k] == v }
+                edit.elementSearchTags.all { (k, v) ->
+                    if (v == "*") element.tags.containsKey(k) else element.tags[k] == v
+                }
             }
         }
 

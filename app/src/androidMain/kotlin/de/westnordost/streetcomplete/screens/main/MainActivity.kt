@@ -1235,18 +1235,8 @@ class MainActivity :
                 android.widget.Toast.makeText(this, "Submitted: $label", android.widget.Toast.LENGTH_SHORT).show()
                 return
             }
-            val position = edit.position ?: return
-            val geometry = de.westnordost.streetcomplete.data.osm.geometry.ElementPointGeometry(position)
-            val f = de.westnordost.streetcomplete.voicemapper.VoiceMapperPendingEditForm.newInstance(edit.id)
-            if (f.arguments == null) f.arguments = bundleOf()
-            val camera = mapFragment.cameraPosition
-            f.requireArguments().putAll(
-                AbstractOverlayForm.createArguments(overlay, null, geometry, camera?.rotation ?: 0.0, camera?.tilt ?: 0.0)
-            )
-            showInBottomSheet(f)
-            mapFragment.highlightGeometry(geometry)
-            mapFragment.highlightPins(overlay.icon, listOf(geometry.center))
-            mapFragment.hideNonHighlightedPins()
+            // Signal VoiceMapperFragment (which is the active bottom sheet) to open the edit sheet
+            voiceMapperService.requestOpenEdit(edit.id)
             return
         }
 

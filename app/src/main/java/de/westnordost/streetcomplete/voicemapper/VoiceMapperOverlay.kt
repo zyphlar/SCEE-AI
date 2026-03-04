@@ -1,6 +1,5 @@
 package de.westnordost.streetcomplete.voicemapper
 
-import androidx.compose.ui.graphics.Color
 import de.westnordost.streetcomplete.R
 import de.westnordost.streetcomplete.data.osm.mapdata.Element
 import de.westnordost.streetcomplete.data.osm.mapdata.MapDataWithGeometry
@@ -43,12 +42,19 @@ class VoiceMapperOverlay(
                     ?: edit.tags["amenity"]
                     ?: edit.tags["shop"]
                     ?: edit.description.take(20)
-                val icon = if (isSubmitted) R.drawable.ic_check else R.drawable.ic_mic
-                val color = if (isSubmitted) Color(0xFF4CAF50) else null  // green for submitted
-                node to OverlayStyle.Point(icon, label, color)
+                // Use pre-composited teardrop pin drawables (look like quest pins)
+                val icon = if (isSubmitted) R.drawable.ic_voice_mapper_pin_submitted else R.drawable.ic_voice_mapper_pin
+                node to OverlayStyle.Point(icon, label, null)
             }
     }
 
-    // createForm is not used for synthetic nodes — MainActivity handles tap directly
-    override fun createForm(element: Element?): AbstractOverlayForm? = null
+    override fun createForm(element: Element?): AbstractOverlayForm? {
+        val nodeId = element?.id ?: return null
+        // Signal VoiceMapperFragment to open the edit sheet; the overlay itself returns null.
+        val edit = voiceMapperService.pendingEdits.value
+            .find { voiceMapperService.nodeIdForEdit(it) == nodeId }
+            ?: return null
+        voiceMapperService.requestOpenEdit(edit.id)
+        return null
+    }
 }

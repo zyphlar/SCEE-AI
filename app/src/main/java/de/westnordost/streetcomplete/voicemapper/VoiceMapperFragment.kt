@@ -108,6 +108,7 @@ class VoiceMapperFragment : Fragment(), IsCloseableBottomSheet, IsMapOrientation
     }
     
     private var pendingListVisible = false
+    private var commandLogVisible = false
 
     private fun setupUI() {
         // Voice button
@@ -137,9 +138,9 @@ class VoiceMapperFragment : Fragment(), IsCloseableBottomSheet, IsMapOrientation
             showSettingsDialog()
         }
 
-        // Help button
+        // Help button — toggles the help + command log panel
         binding.helpButton.setOnClickListener {
-            showHelpDialog()
+            toggleCommandLog()
         }
 
         // Pending count badge — toggles the full pending list
@@ -186,6 +187,33 @@ class VoiceMapperFragment : Fragment(), IsCloseableBottomSheet, IsMapOrientation
         pendingListVisible = false
         binding.pendingEditsContainer.visibility = View.GONE
     }
+
+    private fun toggleCommandLog() {
+        if (commandLogVisible) {
+            commandLogVisible = false
+            binding.commandLogCard.visibility = View.GONE
+            binding.helpButton.clearColorFilter()
+        } else {
+            commandLogVisible = true
+            // Populate the help reference text every time the panel opens
+            binding.helpText.text = HELP_TEXT
+            updateCommandLogSection(viewModel.commandLog.value)
+            binding.commandLogCard.visibility = View.VISIBLE
+            binding.helpButton.setColorFilter(
+                ContextCompat.getColor(requireContext(), R.color.primary))
+        }
+    }
+
+    private fun updateCommandLogSection(entries: List<String>) {
+        if (entries.isEmpty()) {
+            binding.helpLogDivider.visibility = View.GONE
+            binding.commandLogText.visibility = View.GONE
+        } else {
+            binding.commandLogText.text = entries.joinToString("\n")
+            binding.helpLogDivider.visibility = View.VISIBLE
+            binding.commandLogText.visibility = View.VISIBLE
+        }
+    }
     
     private fun observeState() {
         viewLifecycleOwner.lifecycleScope.launch {
@@ -220,7 +248,8 @@ class VoiceMapperFragment : Fragment(), IsCloseableBottomSheet, IsMapOrientation
                         pendingEditsAdapter.submitList(edits)
                         binding.pendingEditsCount.text = "${edits.size} pending"
                         if (edits.isEmpty()) {
-                            binding.pendingCountCard.visibility = View.GONE
+                            // INVISIBLE keeps the layout stable (no shift when badge appears)
+                            binding.pendingCountCard.visibility = View.INVISIBLE
                             hidePendingList()
                         } else {
                             binding.pendingCountCard.visibility = View.VISIBLE
@@ -228,15 +257,21 @@ class VoiceMapperFragment : Fragment(), IsCloseableBottomSheet, IsMapOrientation
                         }
                     }
                 }
-                
-                // Observe command log
+
+                // Observe command log — update section inside the panel if it's open
                 launch {
                     viewModel.commandLog.collectLatest { entries ->
-                        if (entries.isEmpty()) {
-                            binding.commandLogCard.visibility = View.GONE
-                        } else {
-                            binding.commandLogCard.visibility = View.VISIBLE
-                            binding.commandLogText.text = entries.joinToString("\n")
+                        if (commandLogVisible) updateCommandLogSection(entries)
+                    }
+                }
+
+                // Observe overlay pin taps: show the unified edit sheet
+                launch {
+                    voiceMapperService.openEditRequest.collectLatest { editId ->
+                        if (editId != null) {
+                            voiceMapperService.clearOpenEditRequest()
+                            VoiceMapperEditSheet.newInstance(editId)
+                                .show(childFragmentManager, "edit_sheet")
                         }
                     }
                 }
@@ -393,10 +428,7 @@ class VoiceMapperFragment : Fragment(), IsCloseableBottomSheet, IsMapOrientation
     }
 
     private fun showEditDialog(edit: VoiceMapperEdit) {
-        VoiceMapperEditDialogFragment.newInstance(edit).show(
-            childFragmentManager,
-            "edit_dialog"
-        )
+        VoiceMapperEditSheet.newInstance(edit.id).show(childFragmentManager, "edit_sheet")
     }
     
     private fun showSettingsDialog() {
@@ -406,60 +438,38 @@ class VoiceMapperFragment : Fragment(), IsCloseableBottomSheet, IsMapOrientation
         )
     }
     
-    private fun showHelpDialog() {
-        val helpText = """
-            Voice Mapping Commands:
+    companion object {
+        fun newInstance() = VoiceMapperFragment()
 
-            Simple POIs:
-            • "McDonald's on the left"
-            • "Shell gas station on the right"
-            • "KFC, Taco Bell on the left, addresses 123, 125"
-            • "Bench about 20 meters back"
-            • "Fire hydrant on the left, just passed it"
+        private val HELP_TEXT = """
+ADDING POIs
+• "McDonald's on the left"
+• "Shell gas station on the right"
+• "KFC, Taco Bell on the left, addresses 123, 125"
+• "Bench about 20 meters back"
+• "Jimmy's pizza on the left"  (name + type)
+• "20 yards back left at the corner is Jimmy's pizza"
+• "100 feet ahead on the right, Shell station"
 
-            Named businesses (name + type):
-            • "Jimmy's pizza on the left"
-            • "Bob's burgers ahead"
-            • "Li's Chinese restaurant on the right"
-            • "Sal's auto repair at 456 Main"
+MODIFYING EXISTING ELEMENTS
+• "The bakery is now a restaurant"
+• "The Shell station is closed down"
+• "This road is cobblestone"  / "surface is asphalt"
+• "The crossing has traffic lights"
+• "Speed limit is 35"  /  "The café has free wifi"
+• "The bench has no backrest"
+• "The building to the east is residential"
 
-            Complex positioning:
-            • "20 yards back left at the corner is Jimmy's pizza"
-            • "100 feet ahead on the right, Shell station"
-            • "50 meters back right, there's a bench"
-            • "At the corner on the left is a CVS"
+REMOVING
+• "Remove the ATM, it doesn't exist"
+• "The phone booth is gone"
 
-            Multiple + addresses:
-            • "On the left, KFC and Taco Bell, addresses 123 and 125"
-            • "McDonald's right at 200, Burger King right at 202"
-
-            Modifications (find nearby element and update it):
-            • "The bakery is now a restaurant"
-            • "The Shell station is closed down"
-            • "The crossing has traffic lights"
-            • "That road's surface is asphalt"
-            • "Speed limit is 35"
-            • "The café has free wifi"
-            • "The bench has no backrest"
-
-            Deletions:
-            • "Remove the ATM, it doesn't exist"
-            • "The phone booth is gone"
-
-            Tips:
-            • Speak clearly at moderate pace
-            • Include left/right for new POI placement
-            • Yards, feet, and meters all work for distance
-            • "Back left / back right / ahead left" for compound positioning
-            • Long-press mic for continuous mapping mode
-            • Tap the pending badge to review before confirming
+TIPS
+• left/right · ahead · back · N/S/E/W/NE…
+• yards, feet, meters all work
+• Long-press mic → continuous mode
+• Tap pending badge to review edits
         """.trimIndent()
-        
-        androidx.appcompat.app.AlertDialog.Builder(requireContext())
-            .setTitle("Voice Mapping Help")
-            .setMessage(helpText)
-            .setPositiveButton("Got it", null)
-            .show()
     }
     
     // Receive map camera rotation (= compass heading in heading-up mode, degrees, 0=north)
@@ -479,9 +489,5 @@ class VoiceMapperFragment : Fragment(), IsCloseableBottomSheet, IsMapOrientation
         super.onDestroyView()
         tts?.shutdown()
         _binding = null
-    }
-    
-    companion object {
-        fun newInstance() = VoiceMapperFragment()
     }
 }

@@ -335,8 +335,10 @@ EDIT TYPES:
 - DELETE_NODE: Remove an existing nearby element
 
 FINDING EXISTING ELEMENTS:
-Priority 1 — Direct ID (best): If you can identify an element from the nearby list by its TYPE/ID, set elementKey: {"type":"NODE","id":12345}
+Priority 1 — Direct ID (best): If you can identify an element from the nearby list by its TYPE/ID, set elementKey: {"type":"NODE","id":12345} or {"type":"WAY","id":12345}
 Priority 2 — Tag search: elementSearchTags: {"shop":"bakery"} matches elements with those exact tags
+  Use "*" as value to match any value: {"building":"*"} finds any element tagged building=anything
+  Examples: {"highway":"*"} finds any road/path, {"building":"*"} finds any building, {"natural":"*"} finds any natural feature
 Priority 3 — Name search: elementSearchName: "Smith's Bakery" for fuzzy name/brand matching
 applyToAll: true = modify ALL matching elements (e.g. "paint all crosswalks")
 
@@ -352,17 +354,19 @@ MODIFICATION PATTERNS (always use MODIFY_TAGS, never CREATE_NODE):
 - "this/that/these/those X is Y": same as "the X is Y" — treat as modification
 
 DIRECTIONAL MODIFICATIONS (set distanceAhead/side so the app finds the right element):
-- "the building behind me" → elementSearchTags:{"building":"yes"}, distanceAhead:-10, side:CENTER
+- "the building behind me" → elementSearchTags:{"building":"*"}, distanceAhead:-10, side:CENTER
+- "the building to the east" → use cardinal→relative formula; if facing N(0°), east(90°) → side:RIGHT, distanceSide:30
 - "the crossing ahead" → elementSearchTags:{"highway":"crossing"}, distanceAhead:25, side:CENTER
 - "the bus stop on the right" → elementSearchTags:{"highway":"bus_stop"}, side:RIGHT
-- "the alley 200m west" (relative to bearing) → compute distanceAhead/side from cardinal direction
-- ALWAYS set distanceAhead (use defaults: ahead→25, behind→-10) even for MODIFY_TAGS
+- "the alley 200m west" → compute distanceAhead/side from cardinal direction using bearing formula
+- ALWAYS set distanceAhead/side even for MODIFY_TAGS when a direction is mentioned
+- CARDINAL DIRECTIONS apply to MODIFY_TAGS too: use the same cos/sin formula from DISTANCE/POSITION
 
 SURFACE COMMANDS (always MODIFY_TAGS on a highway/path/way element, never CREATE_NODE):
-- "this street is cobblestone" → look in the nearby list for the way/road the user is on (currentRoad); use elementKey if identifiable, else elementSearchTags based on road type; tags:{"surface":"cobblestone"}
+- "this street is cobblestone" → look in the nearby list for the WAY the user is on (currentRoad or nearest highway WAY); prefer elementKey (WAY/id) from nearby list; tags:{"surface":"cobblestone"}
 - "the road surface is asphalt" → same pattern; tags:{"surface":"asphalt"}
-- "this path is unpaved" → elementSearchTags:{"highway":"path"} or similar; tags:{"surface":"unpaved"}
-- CRITICAL: surface commands NEVER create a new node. Always find the existing highway element.
+- "this path is unpaved" → elementSearchTags:{"highway":"*"}; tags:{"surface":"unpaved"}
+- CRITICAL: surface commands NEVER create a new node. Always use elementKey or elementSearchTags:{"highway":"*"} on nearby WAYs.
 
 DISTANCE/POSITION:
 - "bench 20 meters back" → distanceAhead:-20, side:CENTER
@@ -555,10 +559,10 @@ Respond with a single raw JSON object only. Do not write any text before or afte
                     val type = EditType.valueOf(typeStr)
                     val description = editObj["description"]?.jsonPrimitive?.content ?: "Edit"
 
-                    val tags = editObj["tags"]?.jsonObject?.let { tagsObj ->
+                    val tags = (editObj["tags"] as? JsonObject)?.let { tagsObj ->
                         tagsObj.entries.associate { (key, value) -> key to value.jsonPrimitive.content }
                     } ?: emptyMap()
-                    val tagsToRemove = editObj["tagsToRemove"]?.jsonArray
+                    val tagsToRemove = (editObj["tagsToRemove"] as? JsonArray)
                         ?.map { it.jsonPrimitive.content }?.toSet() ?: emptySet()
 
                     val sideStr = editObj["side"]?.jsonPrimitive?.contentOrNull ?: "RIGHT"
@@ -569,13 +573,13 @@ Respond with a single raw JSON object only. Do not write any text before or afte
                     val confidence = editObj["confidence"]?.jsonPrimitive?.floatOrNull ?: 0.8f
                     val explanation = editObj["explanation"]?.jsonPrimitive?.contentOrNull
                     val elementSearchName = editObj["elementSearchName"]?.jsonPrimitive?.contentOrNull
-                    val elementSearchTags = editObj["elementSearchTags"]?.jsonObject?.let { tagsObj ->
+                    val elementSearchTags = (editObj["elementSearchTags"] as? JsonObject)?.let { tagsObj ->
                         tagsObj.entries.associate { (k, v) -> k to v.jsonPrimitive.content }
                     } ?: emptyMap()
                     val applyToAll = editObj["applyToAll"]?.jsonPrimitive?.boolean ?: false
 
                     // Direct element reference from nearby list
-                    val elementKeyObj = editObj["elementKey"]?.jsonObject
+                    val elementKeyObj = editObj["elementKey"] as? JsonObject
                     val elementKey = if (elementKeyObj != null) {
                         try {
                             val ekType = elementKeyObj["type"]?.jsonPrimitive?.contentOrNull ?: "NODE"

@@ -7,17 +7,19 @@
     android:layout_height="match_parent"
     android:background="@android:color/transparent">
 
-    <!-- Main content container - positioned at bottom of screen.
-         layout_marginEnd leaves space for the follow-position / zoom buttons on the right. -->
+    <!-- Main content container - bottom-centered.
+         marginStart leaves space for the edit-history/undo button on the left.
+         marginEnd leaves space for the follow-position / zoom buttons on the right. -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_gravity="bottom"
+        android:layout_marginStart="56dp"
         android:layout_marginEnd="60dp"
         android:orientation="vertical"
-        android:padding="16dp">
+        android:padding="12dp">
 
-        <!-- Status and transcription area -->
+        <!-- Transcription / status card -->
         <androidx.cardview.widget.CardView
             android:id="@+id/transcriptionCard"
             android:layout_width="match_parent"
@@ -32,7 +34,7 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:orientation="vertical"
-                android:padding="12dp">
+                android:padding="10dp">
 
                 <TextView
                     android:id="@+id/statusText"
@@ -48,15 +50,15 @@
                     android:layout_height="wrap_content"
                     android:layout_marginTop="4dp"
                     android:textColor="@android:color/black"
-                    android:textSize="16sp"
+                    android:textSize="15sp"
                     tools:text="McDonald's on the left, KFC on the right" />
 
                 <ProgressBar
                     android:id="@+id/processingIndicator"
-                    android:layout_width="24dp"
-                    android:layout_height="24dp"
+                    android:layout_width="20dp"
+                    android:layout_height="20dp"
                     android:layout_gravity="center_horizontal"
-                    android:layout_marginTop="8dp"
+                    android:layout_marginTop="6dp"
                     android:visibility="gone"
                     tools:visibility="visible" />
 
@@ -64,7 +66,7 @@
 
         </androidx.cardview.widget.CardView>
 
-        <!-- Pending edits container — hidden by default, toggled by badge button -->
+        <!-- Pending edits container — hidden by default, toggled by badge -->
         <androidx.cardview.widget.CardView
             android:id="@+id/pendingEditsContainer"
             android:layout_width="match_parent"
@@ -81,13 +83,12 @@
                 android:orientation="vertical"
                 android:padding="8dp">
 
-                <!-- Header with count and actions -->
                 <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:gravity="center_vertical"
                     android:orientation="horizontal"
-                    android:paddingHorizontal="8dp">
+                    android:paddingHorizontal="4dp">
 
                     <TextView
                         android:id="@+id/pendingEditsCount"
@@ -95,37 +96,36 @@
                         android:layout_height="wrap_content"
                         android:layout_weight="1"
                         android:textColor="@android:color/black"
-                        android:textSize="14sp"
+                        android:textSize="13sp"
                         android:textStyle="bold"
                         tools:text="3 pending" />
 
                     <Button
                         android:id="@+id/confirmAllButton"
                         android:layout_width="wrap_content"
-                        android:layout_height="36dp"
+                        android:layout_height="32dp"
                         android:layout_marginEnd="4dp"
                         android:backgroundTint="@color/primary"
-                        android:text="Confirm All"
+                        android:text="Save All"
                         android:textColor="@android:color/white"
-                        android:textSize="12sp" />
+                        android:textSize="11sp" />
 
                     <Button
                         android:id="@+id/cancelAllButton"
                         android:layout_width="wrap_content"
-                        android:layout_height="36dp"
+                        android:layout_height="32dp"
                         android:backgroundTint="@android:color/darker_gray"
                         android:text="Cancel"
                         android:textColor="@android:color/white"
-                        android:textSize="12sp" />
+                        android:textSize="11sp" />
 
                 </LinearLayout>
 
-                <!-- Pending edits list -->
                 <androidx.recyclerview.widget.RecyclerView
                     android:id="@+id/pendingEditsList"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="8dp"
+                    android:layout_marginTop="6dp"
                     android:maxHeight="200dp"
                     android:nestedScrollingEnabled="true"
                     tools:itemCount="3"
@@ -135,7 +135,7 @@
 
         </androidx.cardview.widget.CardView>
 
-        <!-- Command log — shows recent commands and their results -->
+        <!-- Help + command log panel — toggled by the help button -->
         <androidx.cardview.widget.CardView
             android:id="@+id/commandLogCard"
             android:layout_width="match_parent"
@@ -145,64 +145,100 @@
             app:cardCornerRadius="8dp"
             app:cardElevation="2dp">
 
-            <TextView
-                android:id="@+id/commandLogText"
+            <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:fontFamily="monospace"
-                android:maxLines="6"
-                android:padding="8dp"
-                android:textSize="10sp"
-                android:textColor="@android:color/black"
-                tools:text="✓ Starbucks on the left → 1 edit pending&#10;✗ the bakery is now a restaurant → no match" />
+                android:orientation="vertical"
+                android:padding="8dp">
+
+                <!-- Help reference text -->
+                <TextView
+                    android:id="@+id/helpText"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:textSize="10sp"
+                    android:textColor="@android:color/black"
+                    android:lineSpacingMultiplier="1.2" />
+
+                <!-- Divider — only visible when there are log entries -->
+                <View
+                    android:id="@+id/helpLogDivider"
+                    android:layout_width="match_parent"
+                    android:layout_height="1dp"
+                    android:layout_marginVertical="6dp"
+                    android:background="@android:color/darker_gray"
+                    android:visibility="gone" />
+
+                <!-- Recent command log -->
+                <TextView
+                    android:id="@+id/commandLogText"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:fontFamily="monospace"
+                    android:maxLines="8"
+                    android:textColor="@android:color/black"
+                    android:textSize="10sp"
+                    android:visibility="gone"
+                    tools:text="✓ Starbucks on the left → 1 edit pending&#10;✗ the bakery is now a restaurant → no match"
+                    tools:visibility="visible" />
+
+            </LinearLayout>
 
         </androidx.cardview.widget.CardView>
 
-        <!-- Voice button and controls row -->
+        <!-- 3-column button row: [edit+settings] [mic] [pending+help] -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:gravity="center"
+            android:gravity="center_vertical"
             android:orientation="horizontal">
 
-            <!-- Text-input toggle button (pencil icon) -->
-            <androidx.cardview.widget.CardView
-                android:layout_width="48dp"
-                android:layout_height="48dp"
-                android:layout_marginEnd="8dp"
-                app:cardCornerRadius="24dp"
-                app:cardElevation="4dp">
-                <ImageButton
-                    android:id="@+id/textInputToggleButton"
-                    android:layout_width="match_parent"
-                    android:layout_height="match_parent"
-                    android:background="?attr/selectableItemBackgroundBorderless"
-                    android:contentDescription="Type command"
-                    android:src="@drawable/ic_edit"
-                    android:tint="@android:color/darker_gray" />
-            </androidx.cardview.widget.CardView>
+            <!-- Column 1: Text-input toggle (pencil) + Settings -->
+            <LinearLayout
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:gravity="center"
+                android:orientation="vertical">
 
-            <!-- Settings button -->
-            <androidx.cardview.widget.CardView
-                android:layout_width="48dp"
-                android:layout_height="48dp"
-                android:layout_marginEnd="16dp"
-                app:cardCornerRadius="24dp"
-                app:cardElevation="4dp">
-                <ImageButton
-                    android:id="@+id/settingsButton"
-                    android:layout_width="match_parent"
-                    android:layout_height="match_parent"
-                    android:background="?attr/selectableItemBackgroundBorderless"
-                    android:contentDescription="Settings"
-                    android:src="@drawable/ic_settings"
-                    android:tint="@android:color/darker_gray" />
-            </androidx.cardview.widget.CardView>
+                <androidx.cardview.widget.CardView
+                    android:layout_width="44dp"
+                    android:layout_height="44dp"
+                    app:cardCornerRadius="22dp"
+                    app:cardElevation="4dp">
+                    <ImageButton
+                        android:id="@+id/textInputToggleButton"
+                        android:layout_width="match_parent"
+                        android:layout_height="match_parent"
+                        android:background="?attr/selectableItemBackgroundBorderless"
+                        android:contentDescription="Type command"
+                        android:src="@drawable/ic_edit"
+                        android:tint="@android:color/darker_gray" />
+                </androidx.cardview.widget.CardView>
 
-            <!-- Main voice button -->
+                <androidx.cardview.widget.CardView
+                    android:layout_width="44dp"
+                    android:layout_height="44dp"
+                    android:layout_marginTop="6dp"
+                    app:cardCornerRadius="22dp"
+                    app:cardElevation="4dp">
+                    <ImageButton
+                        android:id="@+id/settingsButton"
+                        android:layout_width="match_parent"
+                        android:layout_height="match_parent"
+                        android:background="?attr/selectableItemBackgroundBorderless"
+                        android:contentDescription="Settings"
+                        android:src="@drawable/ic_settings"
+                        android:tint="@android:color/darker_gray" />
+                </androidx.cardview.widget.CardView>
+
+            </LinearLayout>
+
+            <!-- Column 2: Main voice button -->
             <FrameLayout
                 android:layout_width="wrap_content"
-                android:layout_height="wrap_content">
+                android:layout_height="wrap_content"
+                android:layout_marginHorizontal="8dp">
 
                 <ImageButton
                     android:id="@+id/voiceButton"
@@ -213,11 +249,11 @@
                     android:elevation="8dp"
                     android:src="@drawable/ic_mic" />
 
-                <!-- Continuous mode indicator -->
+                <!-- Continuous mode indicator dot -->
                 <View
                     android:id="@+id/continuousModeIndicator"
-                    android:layout_width="16dp"
-                    android:layout_height="16dp"
+                    android:layout_width="14dp"
+                    android:layout_height="14dp"
                     android:layout_gravity="top|end"
                     android:background="@drawable/bg_continuous_indicator"
                     android:visibility="gone"
@@ -225,48 +261,57 @@
 
             </FrameLayout>
 
-            <!-- Help button -->
-            <androidx.cardview.widget.CardView
-                android:layout_width="48dp"
-                android:layout_height="48dp"
-                android:layout_marginStart="16dp"
-                app:cardCornerRadius="24dp"
-                app:cardElevation="4dp">
-                <ImageButton
-                    android:id="@+id/helpButton"
-                    android:layout_width="match_parent"
-                    android:layout_height="match_parent"
-                    android:background="?attr/selectableItemBackgroundBorderless"
-                    android:contentDescription="Help"
-                    android:src="@drawable/ic_help"
-                    android:tint="@android:color/darker_gray" />
-            </androidx.cardview.widget.CardView>
+            <!-- Column 3: Pending badge + Help -->
+            <LinearLayout
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:gravity="center"
+                android:orientation="vertical">
 
-            <!-- Pending edits badge button — shows count, hidden when no pending edits -->
-            <androidx.cardview.widget.CardView
-                android:id="@+id/pendingCountCard"
-                android:layout_width="48dp"
-                android:layout_height="48dp"
-                android:layout_marginStart="8dp"
-                android:visibility="gone"
-                app:cardCornerRadius="24dp"
-                app:cardElevation="4dp"
-                tools:visibility="visible">
-                <TextView
-                    android:id="@+id/pendingCountBadge"
-                    android:layout_width="match_parent"
-                    android:layout_height="match_parent"
-                    android:background="@color/primary"
-                    android:gravity="center"
-                    android:textColor="@android:color/white"
-                    android:textSize="14sp"
-                    android:textStyle="bold"
-                    tools:text="3" />
-            </androidx.cardview.widget.CardView>
+                <!-- Pending count badge — invisible when no edits, keeps stable layout -->
+                <androidx.cardview.widget.CardView
+                    android:id="@+id/pendingCountCard"
+                    android:layout_width="44dp"
+                    android:layout_height="44dp"
+                    android:visibility="invisible"
+                    app:cardCornerRadius="22dp"
+                    app:cardElevation="4dp"
+                    tools:visibility="visible">
+                    <TextView
+                        android:id="@+id/pendingCountBadge"
+                        android:layout_width="match_parent"
+                        android:layout_height="match_parent"
+                        android:background="@color/primary"
+                        android:gravity="center"
+                        android:textColor="@android:color/white"
+                        android:textSize="13sp"
+                        android:textStyle="bold"
+                        tools:text="3" />
+                </androidx.cardview.widget.CardView>
+
+                <!-- Help button — toggles command log; long-press for help text -->
+                <androidx.cardview.widget.CardView
+                    android:layout_width="44dp"
+                    android:layout_height="44dp"
+                    android:layout_marginTop="6dp"
+                    app:cardCornerRadius="22dp"
+                    app:cardElevation="4dp">
+                    <ImageButton
+                        android:id="@+id/helpButton"
+                        android:layout_width="match_parent"
+                        android:layout_height="match_parent"
+                        android:background="?attr/selectableItemBackgroundBorderless"
+                        android:contentDescription="Help / command log"
+                        android:src="@drawable/ic_help"
+                        android:tint="@android:color/darker_gray" />
+                </androidx.cardview.widget.CardView>
+
+            </LinearLayout>
 
         </LinearLayout>
 
-        <!-- Text input for testing / manual entry — hidden by default -->
+        <!-- Text input row — hidden by default, toggled by pencil button -->
         <LinearLayout
             android:id="@+id/textInputRow"
             android:layout_width="match_parent"
@@ -281,7 +326,8 @@
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
                 android:background="@android:color/white"
-                android:hint="Type a command to test..."
+                android:hint="Type a command…"
+                android:imeOptions="actionSend"
                 android:inputType="text"
                 android:padding="8dp"
                 android:textSize="13sp" />
@@ -302,17 +348,17 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_gravity="center"
-            android:layout_marginTop="8dp"
+            android:layout_marginTop="6dp"
             app:cardCornerRadius="8dp"
             app:cardElevation="2dp">
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:paddingHorizontal="12dp"
-                android:paddingVertical="6dp"
-                android:text="Tap to speak • Long press for continuous"
+                android:paddingVertical="5dp"
+                android:text="Tap · Long-press for continuous"
                 android:textColor="@android:color/darker_gray"
-                android:textSize="12sp" />
+                android:textSize="11sp" />
         </androidx.cardview.widget.CardView>
 
     </LinearLayout>

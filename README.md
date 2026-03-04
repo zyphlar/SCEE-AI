@@ -3,13 +3,12 @@
 A voice-based mapping feature for SCEE (StreetComplete Expert Edition) that allows hands-free addition, modification, and removal of map elements while driving, cycling, or walking.
 
 ### ADB build
-
+    JAVA_HOME="/c/Program Files/Eclipse Adoptium/jdk-21.0.1.12-hotspot" ./gradlew :app:assembleDebug
 
     ADB="/c/Users/Will/AppData/Local/Android/Sdk/platform-tools/adb.exe" && "$ADB" install -r
-    app/build/outputs/apk/debug/app-debug.apk 2>&1
+    app/build/outputs/apk/debug/app-debug.apk
 
-    ADB="/c/Users/Will/AppData/Local/Android/Sdk/platform-tools/adb.exe" && "$ADB" shell monkey -p
-    de.westnordost.streetcomplete.expert.debug 1 2>&1
+    "/c/Users/Will/AppData/Local/Android/Sdk/platform-tools/adb.exe" shell monkey -p de.westnordost.streetcomplete.expert.debug 1
 
 ## Features
 
