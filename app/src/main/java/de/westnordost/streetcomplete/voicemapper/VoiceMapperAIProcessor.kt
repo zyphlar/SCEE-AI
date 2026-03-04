@@ -61,6 +61,7 @@ class VoiceMapperAIProcessor(
         Log.d(TAG, "tryLocalParsing: \"$transcription\"")
 
         // Defer modification / existential commands to the AI — it handles them better
+        val firstWord = transcription.split(Regex("\\s+")).firstOrNull() ?: ""
         val isModification = transcription.contains(" is now ") ||
             transcription.contains(" are now ") ||
             transcription.contains(" was ") ||
@@ -74,13 +75,20 @@ class VoiceMapperAIProcessor(
             transcription.contains("has closed") ||
             transcription.contains("isn't there") ||
             transcription.contains("not there") ||
-            // "the X is ..." pattern without explicit side → likely a modification
-            (transcription.startsWith("the ") &&
+            // "the/this/that/those/these X is ..." pattern → likely a modification
+            ((transcription.startsWith("the ") || transcription.startsWith("this ") ||
+              transcription.startsWith("that ") || transcription.startsWith("those ") ||
+              transcription.startsWith("these ")) &&
                 transcription.contains(" is ") &&
                 !transcription.contains(" is on the ") &&
-                !transcription.contains(" is to the ") &&
-                !transcription.contains(" is a ") &&
-                !transcription.contains(" is an "))
+                !transcription.contains(" is to the ")) ||
+            // "[number] is [X]" → likely modifying an element at that address
+            (firstWord.isNotEmpty() && firstWord.all { it.isDigit() } &&
+                transcription.contains(" is ") &&
+                !transcription.contains(" is on the ") &&
+                !transcription.contains(" is to the ")) ||
+            // Surface/road-property keywords → always a modification, never a creation
+            SURFACE_KEYWORDS.any { transcription.contains(it) }
         if (isModification) {
             Log.d(TAG, "tryLocalParsing: deferring to AI (modification pattern detected)")
             return null
@@ -148,6 +156,14 @@ class VoiceMapperAIProcessor(
                 .mapNotNull { it.value.toIntOrNull() }
                 .filter { it !in distanceNumbersUsed }
                 .toList()
+        }
+
+        // Apply default distances when a direction word is present but no explicit distance given
+        if (computedDistanceAhead == 0.0) {
+            when {
+                hasFwd && !hasBack -> computedDistanceAhead = 25.0   // "ahead" → 25m forward
+                hasBack && !hasFwd -> computedDistanceAhead = -10.0  // "back"  → 10m behind
+            }
         }
 
         // Effective side: compound-back directions assign the side already;
@@ -271,13 +287,16 @@ class VoiceMapperAIProcessor(
     }
 
     /**
-     * Call Claude API for complex command parsing
+     * Call Claude API for complex command parsing.
+     * Uses tool_use to guarantee structured output — the model cannot respond with prose.
      */
     private suspend fun callClaudeAPI(context: VoiceMapperContext): VoiceMapperAIResponse {
         val requestBodyStr = buildJsonObject {
             put("model", "claude-sonnet-4-6")
             put("max_tokens", 2000)
             put("system", buildSystemPrompt())
+            putJsonArray("tools") { add(buildToolDefinition()) }
+            putJsonObject("tool_choice") { put("type", "any") }  // must call the tool
             putJsonArray("messages") {
                 addJsonObject {
                     put("role", "user")
@@ -303,9 +322,11 @@ class VoiceMapperAIProcessor(
     }
 
     private fun buildSystemPrompt(): String = """
-You are an expert OpenStreetMap mapper assistant in the SCEE app. Interpret voice commands from a moving mapper and output OSM edits as JSON.
+You are an expert OpenStreetMap mapper assistant embedded in the SCEE app.
+OUTPUT ONLY A SINGLE RAW JSON OBJECT. No explanations, no prose, no markdown, no code fences.
+Your entire response must be valid JSON that can be parsed directly.
 
-RESPONSE FORMAT (output valid JSON only, no markdown):
+RESPONSE SCHEMA (every field required, use null/empty for unused):
 {"success":true,"edits":[{"type":"CREATE_NODE|MODIFY_TAGS|DELETE_NODE","description":"...","tags":{},"tagsToRemove":[],"side":"LEFT|RIGHT|CENTER","distanceAhead":0,"distanceSide":15,"confidence":0.9,"explanation":"...","elementKey":null,"elementSearchName":null,"elementSearchTags":{},"applyToAll":false}],"clarificationNeeded":null,"audioFeedback":"..."}
 
 EDIT TYPES:
@@ -325,12 +346,42 @@ MODIFICATION PATTERNS (always use MODIFY_TAGS, never CREATE_NODE):
 - "the X is gone/closed/doesn't exist" → DELETE_NODE or add disused tags
 - "the X is called Y" / "the X is named Y" → tags:{"name":"Y"}
 - "the X has been demolished/removed" → DELETE_NODE
+- "[number] is [type]": "1447 is a house" or "1447 is a hairstylist" → find element with addr:housenumber=1447, update main type tags (building=house or amenity=hairstylist); if multiple matches pick closest
+  Use elementSearchTags:{"addr:housenumber":"1447"}, then apply type tags
+- "[number] is now [type]": same as above but explicit change
+- "this/that/these/those X is Y": same as "the X is Y" — treat as modification
+
+DIRECTIONAL MODIFICATIONS (set distanceAhead/side so the app finds the right element):
+- "the building behind me" → elementSearchTags:{"building":"yes"}, distanceAhead:-10, side:CENTER
+- "the crossing ahead" → elementSearchTags:{"highway":"crossing"}, distanceAhead:25, side:CENTER
+- "the bus stop on the right" → elementSearchTags:{"highway":"bus_stop"}, side:RIGHT
+- "the alley 200m west" (relative to bearing) → compute distanceAhead/side from cardinal direction
+- ALWAYS set distanceAhead (use defaults: ahead→25, behind→-10) even for MODIFY_TAGS
+
+SURFACE COMMANDS (always MODIFY_TAGS on a highway/path/way element, never CREATE_NODE):
+- "this street is cobblestone" → look in the nearby list for the way/road the user is on (currentRoad); use elementKey if identifiable, else elementSearchTags based on road type; tags:{"surface":"cobblestone"}
+- "the road surface is asphalt" → same pattern; tags:{"surface":"asphalt"}
+- "this path is unpaved" → elementSearchTags:{"highway":"path"} or similar; tags:{"surface":"unpaved"}
+- CRITICAL: surface commands NEVER create a new node. Always find the existing highway element.
 
 DISTANCE/POSITION:
-- "bench 20 meters back" → distanceAhead:-20, side:CENTER (negative=behind user)
+- "bench 20 meters back" → distanceAhead:-20, side:CENTER
 - "on the left, 50m ahead" → side:LEFT, distanceAhead:50
 - Default distanceSide: 15 (meters from road edge)
 - UNIT CONVERSION (always output meters): 1 yard=0.9144m, 1 foot=0.3048m, 1 mile=1609.344m
+- DEFAULT DISTANCES when no explicit distance given: "ahead"/"forward" → distanceAhead:25; "behind"/"back" → distanceAhead:-10
+- ALWAYS set distanceAhead/side for MODIFY_TAGS with directional info — the app uses it to find the right element
+
+ABSOLUTE CARDINAL & INTERCARDINAL DIRECTIONS (convert to relative using bearing):
+- Compass bearing: N=0°, NE=45°, E=90°, SE=135°, S=180°, SW=225°, W=270°, NW=315°
+- Formula: relAngle = (directionBearing - userBearing + 360) % 360
+  Then: distanceAhead = distance * cos(relAngle_rad); sideComponent = distance * sin(relAngle_rad)
+  if sideComponent > 0: side=RIGHT, distanceSide=sideComponent; if < 0: side=LEFT, distanceSide=|sideComponent|
+  if |sideComponent| < distance*0.2: side=CENTER (roughly straight)
+- Example: "200m northeast (45°)" when heading north (0°): relAngle=45°
+  distanceAhead=200*cos(45°)=141, sideComponent=200*sin(45°)=141 → side:RIGHT, distanceAhead:141, distanceSide:141
+- Example: "200m west (270°)" when heading east (90°): relAngle=180° → distanceAhead:-200, side:CENTER
+- Example: "200m west (270°)" when heading north (0°): relAngle=270° → sideComponent=-200 → side:LEFT, distanceSide:200
 
 NAMED BUSINESSES (extract name + type — always include name tag):
 - "Jimmy's pizza on the left" → tags:{"amenity":"restaurant","cuisine":"pizza","name":"Jimmy's Pizza"}, side:LEFT
@@ -363,6 +414,7 @@ SENTENCE PATTERNS THAT MEAN CREATION (not modification):
 - "[position] is [business]": "20 yards back left at the corner is Jimmy's pizza" → CREATE_NODE
 - "there's a [business] [position]": "there's a bakery on the left" → CREATE_NODE
 - "[business] [position]": "Starbucks on the right" → CREATE_NODE
+- When "ahead"/"forward" present but no distance: distanceAhead:25; when "behind"/"back" present: distanceAhead:-10
 
 COMMON QUEST ANSWERS (MODIFY_TAGS on nearby element):
 Surface: asphalt|concrete|paving_stones|sett|cobblestone|unpaved|gravel|dirt|grass|sand|wood
@@ -395,6 +447,12 @@ Steps: {"step_count":"N"}, {"ramp":"yes|no"}, {"handrail":"yes|no"}
 Crossing type: "zebra"→{"crossing":"zebra"}, "traffic lights"→{"crossing":"traffic_signals"}
 Post box collection: {"collection_times":"Mo-Fr 09:00,17:00"}
 Religion/denomination: {"religion":"christian|muslim|jewish|buddhist"}, {"denomination":"catholic|protestant|..."}
+Shelter/bus shelter "is covered"→{"covered":"yes"}, "no roof"→{"covered":"no"}, "has seating"→{"bench":"yes"}
+  Search: elementSearchTags:{"amenity":"shelter"} — if no shelter node, try {"highway":"bus_stop"} with tags:{"shelter":"yes"}
+ATM brand change "[OldBrand] ATM is now [NewBrand] ATM":
+  elementSearchTags:{"amenity":"atm"} + elementSearchName:"OldBrand"
+  tags:{"brand":"NewBrand","operator":"NewBrand","name":"NewBrand ATM"} + brand:wikidata if known
+  tagsToRemove: old brand/operator/name tags only if they change
 
 KEY RULES:
 1. Include brand:wikidata for known brands in CREATE_NODE
@@ -432,7 +490,7 @@ User location: ${context.latitude}, ${context.longitude}, bearing ${context.bear
 Current road: ${context.currentRoadName ?: "Unknown"} ${context.currentRoadRef?.let { "($it)" } ?: ""}
 
 $nearbyInfo
-Parse this voice command and return the JSON response.
+Respond with a single raw JSON object only. Do not write any text before or after the JSON.
 """.trimIndent()
     }
 
@@ -449,19 +507,28 @@ Parse this voice command and return the JSON response.
                 return VoiceMapperAIResponse(success = false, errorMessage = "$type: $msg")
             }
 
-            val content = jsonResponse["content"]?.jsonArray?.firstOrNull()
-                ?.jsonObject?.get("text")?.jsonPrimitive?.content
+            val contentArray = jsonResponse["content"]?.jsonArray
                 ?: run {
-                    Log.e(TAG, "No content in response. Raw: $responseBody")
-                    return VoiceMapperAIResponse(success = false, errorMessage = "No content in response. Raw: $responseBody")
+                    Log.e(TAG, "No content array. Raw: $responseBody")
+                    return VoiceMapperAIResponse(success = false, errorMessage = "No content in response")
                 }
 
-            val cleanJson = content
-                .replace(Regex("```json\\s*"), "")
-                .replace(Regex("```\\s*"), "")
-                .trim()
+            // Primary path: tool_use block (structured — prose is impossible with tool_choice=any)
+            val toolInput = contentArray
+                .firstOrNull { it.jsonObject["type"]?.jsonPrimitive?.contentOrNull == "tool_use" }
+                ?.jsonObject?.get("input")?.jsonObject
 
-            val parsed = json.parseToJsonElement(cleanJson).jsonObject
+            // Fallback: parse text content as JSON (shouldn't happen with tool_choice=any)
+            val parsed: JsonObject = if (toolInput != null) {
+                Log.d(TAG, "parseAIResponse: tool_use path")
+                toolInput
+            } else {
+                Log.w(TAG, "parseAIResponse: no tool_use block, attempting text fallback")
+                val text = contentArray.firstOrNull()
+                    ?.jsonObject?.get("text")?.jsonPrimitive?.content
+                    ?: return VoiceMapperAIResponse(success = false, errorMessage = "No parseable content in response")
+                json.parseToJsonElement(extractJson(text)).jsonObject
+            }
 
             val success = parsed["success"]?.jsonPrimitive?.boolean ?: false
             val clarificationNeeded = parsed["clarificationNeeded"]?.jsonPrimitive?.contentOrNull
@@ -486,18 +553,13 @@ Parse this voice command and return the JSON response.
 
                     val typeStr = editObj["type"]?.jsonPrimitive?.content ?: "CREATE_NODE"
                     val type = EditType.valueOf(typeStr)
-
                     val description = editObj["description"]?.jsonPrimitive?.content ?: "Edit"
 
                     val tags = editObj["tags"]?.jsonObject?.let { tagsObj ->
-                        tagsObj.entries.associate { (key, value) ->
-                            key to value.jsonPrimitive.content
-                        }
+                        tagsObj.entries.associate { (key, value) -> key to value.jsonPrimitive.content }
                     } ?: emptyMap()
-
-                    val tagsToRemove = editObj["tagsToRemove"]?.jsonArray?.map {
-                        it.jsonPrimitive.content
-                    }?.toSet() ?: emptySet()
+                    val tagsToRemove = editObj["tagsToRemove"]?.jsonArray
+                        ?.map { it.jsonPrimitive.content }?.toSet() ?: emptySet()
 
                     val sideStr = editObj["side"]?.jsonPrimitive?.contentOrNull ?: "RIGHT"
                     val side = try { RelativeSide.valueOf(sideStr) } catch (e: Exception) { RelativeSide.RIGHT }
@@ -558,6 +620,100 @@ Parse this voice command and return the JSON response.
         }
     }
 
+    private fun buildToolDefinition(): JsonObject = buildJsonObject {
+        put("name", "submit_osm_edits")
+        put("description", "Submit structured OSM edits parsed from a voice command")
+        putJsonObject("input_schema") {
+            put("type", "object")
+            putJsonObject("properties") {
+                putJsonObject("success") { put("type", "boolean") }
+                putJsonObject("edits") {
+                    put("type", "array")
+                    putJsonObject("items") {
+                        put("type", "object")
+                        putJsonObject("properties") {
+                            putJsonObject("type") {
+                                put("type", "string")
+                                putJsonArray("enum") {
+                                    add(JsonPrimitive("CREATE_NODE"))
+                                    add(JsonPrimitive("MODIFY_TAGS"))
+                                    add(JsonPrimitive("DELETE_NODE"))
+                                }
+                            }
+                            putJsonObject("description") { put("type", "string") }
+                            putJsonObject("tags") {
+                                put("type", "object")
+                                putJsonObject("additionalProperties") { put("type", "string") }
+                            }
+                            putJsonObject("tagsToRemove") {
+                                put("type", "array")
+                                putJsonObject("items") { put("type", "string") }
+                            }
+                            putJsonObject("side") {
+                                put("type", "string")
+                                putJsonArray("enum") {
+                                    add(JsonPrimitive("LEFT"))
+                                    add(JsonPrimitive("RIGHT"))
+                                    add(JsonPrimitive("CENTER"))
+                                }
+                            }
+                            putJsonObject("distanceAhead") { put("type", "number") }
+                            putJsonObject("distanceSide") { put("type", "number") }
+                            putJsonObject("confidence") { put("type", "number") }
+                            putJsonObject("explanation") { put("type", "string") }
+                            putJsonObject("elementKey") {
+                                put("type", "object")
+                                putJsonObject("properties") {
+                                    putJsonObject("type") { put("type", "string") }
+                                    putJsonObject("id") { put("type", "integer") }
+                                }
+                            }
+                            putJsonObject("elementSearchName") { put("type", "string") }
+                            putJsonObject("elementSearchTags") {
+                                put("type", "object")
+                                putJsonObject("additionalProperties") { put("type", "string") }
+                            }
+                            putJsonObject("applyToAll") { put("type", "boolean") }
+                        }
+                        putJsonArray("required") {
+                            add(JsonPrimitive("type"))
+                            add(JsonPrimitive("description"))
+                        }
+                    }
+                }
+                putJsonObject("clarificationNeeded") { put("type", "string") }
+                putJsonObject("audioFeedback") { put("type", "string") }
+            }
+            putJsonArray("required") {
+                add(JsonPrimitive("success"))
+                add(JsonPrimitive("edits"))
+            }
+        }
+    }
+
+    /** Extract the outermost JSON object from a string, stripping any surrounding prose. */
+    private fun extractJson(text: String): String {
+        val start = text.indexOf('{')
+        if (start == -1) return text
+        var depth = 0
+        var inString = false
+        var escape = false
+        for (i in start until text.length) {
+            val c = text[i]
+            when {
+                escape -> escape = false
+                inString && c == '\\' -> escape = true
+                c == '"' -> inString = !inString
+                !inString && c == '{' -> depth++
+                !inString && c == '}' -> {
+                    depth--
+                    if (depth == 0) return text.substring(start, i + 1)
+                }
+            }
+        }
+        return text.substring(start) // unclosed — return what we have
+    }
+
     fun processOffline(context: VoiceMapperContext): VoiceMapperAIResponse {
         val result = tryLocalParsing(context)
         return result ?: VoiceMapperAIResponse(
@@ -568,6 +724,11 @@ Parse this voice command and return the JSON response.
 
     companion object {
         private const val TAG = "VoiceMapperAI"
+        // Road/path surface terms — presence of any of these strongly implies a modification
+        private val SURFACE_KEYWORDS = setOf(
+            "cobblestone", "asphalt", "tarmac", "concrete", "paving_stones", "paving stones",
+            "unpaved", "gravel", "dirt", "grass", "sand", "sett", "compacted", "fine_gravel"
+        )
     }
 }
 

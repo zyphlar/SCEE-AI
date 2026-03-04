@@ -15,7 +15,8 @@
       "Bash(\"$ADB\" install:*)",
       "Bash(\"$ADB\" logcat:*)",
       "Bash(\"/c/Users/Will/AppData/Local/Android/Sdk/platform-tools/adb.exe\" logcat:*)",
-      "Bash(/c/Users/Will/AppData/Local/Android/Sdk/platform-tools/adb.exe install:*)"
+      "Bash(/c/Users/Will/AppData/Local/Android/Sdk/platform-tools/adb.exe install:*)",
+      "Bash(grep:*)"
     ]
   }
 }

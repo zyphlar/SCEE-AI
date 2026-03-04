@@ -128,8 +128,14 @@ class VoiceMapperService(
         }
     }
     
-    fun updateLocation(location: Location, bearing: Float) {
+    fun updateLocation(location: Location, gpsBearing: Float) {
         currentLocation = location
+        // GPS bearing is only reliable when moving; prefer compass bearing when slow/stationary
+        if (location.speed > 0.5f) currentBearing = gpsBearing
+    }
+
+    /** Update bearing from map camera rotation (compass heading in heading-up mode, degrees). */
+    fun updateCompassBearing(bearing: Float) {
         currentBearing = bearing
     }
     
@@ -323,6 +329,8 @@ class VoiceMapperService(
 
         override fun onResults(results: Bundle?) {
             isRecognizerActive = false
+            // Stop listening after a result — continuous mode restart is handled by the ViewModel
+            _isListening.value = false
             val matches = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
             val transcription = matches?.firstOrNull() ?: return
 
@@ -358,8 +366,9 @@ class VoiceMapperService(
             _events.emit(VoiceMapperEvent.ProcessingStarted(transcription))
             
             try {
-                // Get nearby map data for context
-                val nearbyData = getNearbyMapData(location)
+                // Get nearby map data for context — expand radius if a large distance is mentioned
+                val mentionedDistance = extractMaxMentionedDistance(transcription)
+                val nearbyData = getNearbyMapData(location, mentionedDistance)
                 val currentRoad = findCurrentRoad(location, nearbyData)
                 
                 // Sort nearby elements by distance, closest first, for best AI context
@@ -399,8 +408,10 @@ class VoiceMapperService(
                                 resolvedEdits.add(edit.copy(position = matchGeom?.center ?: edit.position))
                             }
                             edit.elementSearchName != null || edit.elementSearchTags.isNotEmpty() -> {
-                                // Find matching elements in nearby map data by search criteria
-                                val matches = findElementsBySearch(edit, nearbyData, location)
+                                // Use distanceAhead/side to compute a reference search position when set
+                                val searchCenter = computeSearchCenter(edit)
+                                    ?: LatLon(location.latitude, location.longitude)
+                                val matches = findElementsBySearch(edit, nearbyData, searchCenter)
                                 if (matches.isEmpty()) {
                                     resolvedEdits.add(edit.copy(
                                         description = edit.description + " (no match found nearby)",
@@ -464,13 +475,34 @@ class VoiceMapperService(
         }
     }
     
-    private suspend fun getNearbyMapData(location: Location): MutableMapDataWithGeometry {
-        // Get map data within ~100m radius
+    /** Extract the largest distance (in metres) mentioned in the transcription. */
+    private fun extractMaxMentionedDistance(transcription: String): Double {
+        val pattern = Regex(
+            """(\d+(?:\.\d+)?)\s*(m\b|meters?|metres?|yards?|yds?\b|feet|foot|ft\b|km\b|miles?\b|mi\b)""",
+            RegexOption.IGNORE_CASE
+        )
+        return pattern.findAll(transcription).maxOfOrNull { m ->
+            val v = m.groupValues[1].toDoubleOrNull() ?: 0.0
+            val u = m.groupValues[2].lowercase().trimEnd()
+            when {
+                u.startsWith("km")                         -> v * 1000.0
+                u.startsWith("mile") || u == "mi"          -> v * 1609.344
+                u.startsWith("yard") || u.startsWith("yd") -> v * 0.9144
+                u == "feet" || u == "foot" || u == "ft"    -> v * 0.3048
+                else                                       -> v
+            }
+        } ?: 0.0
+    }
+
+    private suspend fun getNearbyMapData(location: Location, extraRadiusMeters: Double = 0.0): MutableMapDataWithGeometry {
+        // At minimum 100m radius; expand to cover any explicitly mentioned distance + 50m buffer
+        val radiusMeters = maxOf(110.0, extraRadiusMeters + 50.0)
+        val radiusDeg = radiusMeters / 111_320.0
         val bbox = BoundingBox(
-            location.latitude - 0.001,
-            location.longitude - 0.001,
-            location.latitude + 0.001,
-            location.longitude + 0.001
+            location.latitude - radiusDeg,
+            location.longitude - radiusDeg,
+            location.latitude + radiusDeg,
+            location.longitude + radiusDeg
         )
         return mapDataController.getMapDataWithGeometry(bbox)
     }
@@ -493,16 +525,35 @@ class VoiceMapperService(
     }
     
     /**
+     * Compute a geographic reference position from an edit's distanceAhead/side.
+     * Returns null if no meaningful offset is specified.
+     */
+    private fun computeSearchCenter(edit: VoiceMapperEdit): LatLon? {
+        val side = edit.relativeSide ?: RelativeSide.CENTER
+        val hasAhead = edit.distanceAhead != 0.0
+        // Only treat distanceSide as meaningful if it's larger than the default 15m
+        val hasSide = side != RelativeSide.CENTER && edit.distanceSide > 20.0
+        if (!hasAhead && !hasSide) return null
+        return calculateRelativePosition(
+            side,
+            edit.distanceAhead,
+            if (hasSide) edit.distanceSide else 0.0
+        )
+    }
+
+    /**
      * Find nearby OSM elements matching the edit's search criteria.
      * Returns a list: single best match normally, or all matches when applyToAll=true.
+     * [searchCenter] is the geographic point to sort by — use computed reference position
+     * when the command specifies a distance/direction.
      */
     private fun findElementsBySearch(
         edit: VoiceMapperEdit,
         nearbyData: MutableMapDataWithGeometry,
-        location: Location
+        searchCenter: LatLon
     ): List<Element> {
-        val lat = location.latitude
-        val lon = location.longitude
+        val lat = searchCenter.latitude
+        val lon = searchCenter.longitude
         var candidates: List<Element> = nearbyData.toList()
             .filter { it.tags.isNotEmpty() }
 
@@ -527,27 +578,43 @@ class VoiceMapperService(
 
         if (candidates.isEmpty()) return emptyList()
 
-        // Sort by distance and optionally by side direction
+        // User position for bearing-based side penalty (independent of search center)
+        val userLat = currentLocation?.latitude ?: lat
+        val userLon = currentLocation?.longitude ?: lon
+
+        // Sort by distance to searchCenter; apply side/direction penalty relative to user bearing
         candidates = candidates.sortedBy { element ->
             val center = nearbyData.getGeometry(element.type, element.id)?.center
                 ?: (element as? Node)?.position ?: return@sortedBy Double.MAX_VALUE
             var dist = distanceBetween(lat, lon, center.latitude, center.longitude)
-            // Penalize elements on the wrong side if a side is specified
-            if (edit.relativeSide != null) {
-                val bearing = currentBearing.toDouble()
-                val elementBearing = Math.toDegrees(
-                    kotlin.math.atan2(
-                        center.longitude - lon,
-                        center.latitude - lat
-                    )
+
+            val bearing = currentBearing.toDouble()
+            val elementBearing = Math.toDegrees(
+                kotlin.math.atan2(
+                    center.longitude - userLon,
+                    center.latitude - userLat
                 )
-                val relAngle = ((elementBearing - bearing + 540) % 360) - 180
-                val isLeft = relAngle < 0
-                val isRight = relAngle > 0
-                val wrongSide = (edit.relativeSide == RelativeSide.LEFT && isRight) ||
-                    (edit.relativeSide == RelativeSide.RIGHT && isLeft)
-                if (wrongSide) dist += 500.0 // strong distance penalty for wrong side
+            )
+            // relAngle: -180..+180; 0=directly ahead, ±180=directly behind, +90=right, -90=left
+            val relAngle = ((elementBearing - bearing + 540) % 360) - 180
+
+            // Penalize elements on the wrong left/right side
+            if (edit.relativeSide != null && edit.relativeSide != RelativeSide.CENTER) {
+                val wrongSide = (edit.relativeSide == RelativeSide.LEFT && relAngle > 0) ||
+                    (edit.relativeSide == RelativeSide.RIGHT && relAngle < 0)
+                if (wrongSide) dist += 500.0
             }
+
+            // Penalize elements in the wrong forward/backward hemisphere for ahead/behind commands
+            if ((edit.relativeSide == null || edit.relativeSide == RelativeSide.CENTER) &&
+                    edit.distanceAhead != 0.0) {
+                // cos(relAngle) > 0 = element is ahead, < 0 = element is behind
+                val cosAngle = kotlin.math.cos(Math.toRadians(relAngle))
+                val wrongDirection = (edit.distanceAhead < 0 && cosAngle > 0.1) ||
+                    (edit.distanceAhead > 0 && cosAngle < -0.1)
+                if (wrongDirection) dist += 300.0
+            }
+
             dist
         }
 

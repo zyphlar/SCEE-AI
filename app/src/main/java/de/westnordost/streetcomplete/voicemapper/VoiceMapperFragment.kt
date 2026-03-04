@@ -23,6 +23,7 @@ import de.westnordost.streetcomplete.R
 import de.westnordost.streetcomplete.data.osm.mapdata.LatLon
 import de.westnordost.streetcomplete.databinding.FragmentVoiceMapperBinding
 import de.westnordost.streetcomplete.screens.main.bottom_sheet.IsCloseableBottomSheet
+import de.westnordost.streetcomplete.screens.main.bottom_sheet.IsMapOrientationAware
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import org.koin.android.ext.android.inject
@@ -39,7 +40,7 @@ import java.util.Locale
  * - Audio feedback via TTS
  * - Quick correction interface
  */
-class VoiceMapperFragment : Fragment(), IsCloseableBottomSheet {
+class VoiceMapperFragment : Fragment(), IsCloseableBottomSheet, IsMapOrientationAware {
     
     private var _binding: FragmentVoiceMapperBinding? = null
     private val binding get() = _binding!!
@@ -461,6 +462,12 @@ class VoiceMapperFragment : Fragment(), IsCloseableBottomSheet {
             .show()
     }
     
+    // Receive map camera rotation (= compass heading in heading-up mode, degrees, 0=north)
+    // This is the best available bearing for left/right/ahead/back calculations
+    override fun onMapOrientation(rotation: Double, tilt: Double) {
+        voiceMapperService.updateCompassBearing(rotation.toFloat())
+    }
+
     // Consume all map clicks — the voice HUD should not dismiss when the user taps the map
     override fun onClickMapAt(position: LatLon, clickAreaSizeInMeters: Double): Boolean = true
 
