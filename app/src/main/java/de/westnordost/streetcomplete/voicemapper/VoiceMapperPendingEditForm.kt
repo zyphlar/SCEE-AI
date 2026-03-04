@@ -32,6 +32,7 @@ class VoiceMapperPendingEditForm : AbstractOverlayForm() {
 
     private var currentEdit: VoiceMapperEdit? = null
     private val editedTags = mutableMapOf<String, String>()
+    private var sourceTranscriptionText: TextView? = null
     private var descriptionEdit: EditText? = null
     private var tagsContainer: LinearLayout? = null
     private var positionText: TextView? = null
@@ -51,12 +52,18 @@ class VoiceMapperPendingEditForm : AbstractOverlayForm() {
         val edit = currentEdit ?: return
         setTitleHintLabel(edit.description)
 
+        sourceTranscriptionText = view.findViewById(R.id.sourceTranscriptionText)
         descriptionEdit = view.findViewById(R.id.descriptionEdit)
         tagsContainer = view.findViewById(R.id.tagsContainer)
         positionText = view.findViewById(R.id.positionText)
         moveModeHint = view.findViewById(R.id.moveModeHint)
         val addTagButton = view.findViewById<Button>(R.id.addTagButton)
         val movePositionButton = view.findViewById<Button>(R.id.movePositionButton)
+
+        edit.sourceTranscription?.let { transcript ->
+            sourceTranscriptionText?.text = "heard: \"$transcript\""
+            sourceTranscriptionText?.visibility = View.VISIBLE
+        }
 
         descriptionEdit?.setText(edit.description)
         rebuildTagRows()

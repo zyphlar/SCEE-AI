@@ -9,6 +9,17 @@
         android:orientation="vertical"
         android:padding="4dp">
 
+        <!-- Original voice input (read-only, italic blue) -->
+        <TextView
+            android:id="@+id/sourceTranscriptionText"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="8dp"
+            android:textColor="@android:color/holo_blue_dark"
+            android:textSize="12sp"
+            android:textStyle="italic"
+            android:visibility="gone" />
+
         <!-- Description row -->
         <LinearLayout
             android:layout_width="match_parent"

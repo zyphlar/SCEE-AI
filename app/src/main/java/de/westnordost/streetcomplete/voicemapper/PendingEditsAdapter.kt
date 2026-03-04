@@ -83,9 +83,17 @@ class PendingEditsAdapter(
             }
             sideText.visibility = if (edit.relativeSide != null) View.VISIBLE else View.GONE
             
-            // AI explanation
-            explanationText.text = edit.aiExplanation ?: ""
-            explanationText.visibility = if (edit.aiExplanation != null) View.VISIBLE else View.GONE
+            // Show source transcription and/or AI explanation in italic blue help text
+            val helpLines = buildList {
+                edit.sourceTranscription?.let { add("heard: \"$it\"") }
+                edit.aiExplanation?.let { add(it) }
+            }
+            if (helpLines.isNotEmpty()) {
+                explanationText.text = helpLines.joinToString("\n")
+                explanationText.visibility = View.VISIBLE
+            } else {
+                explanationText.visibility = View.GONE
+            }
             
             // Edit type icon/indicator
             val typeIcon = when (edit.type) {

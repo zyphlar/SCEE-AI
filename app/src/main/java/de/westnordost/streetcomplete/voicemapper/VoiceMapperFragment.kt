@@ -424,7 +424,8 @@ class VoiceMapperFragment : Fragment(), IsCloseableBottomSheet {
             .show()
     }
     
-    override fun onClickMapAt(position: LatLon, clickAreaSizeInMeters: Double): Boolean = false
+    // Consume all map clicks — the voice HUD should not dismiss when the user taps the map
+    override fun onClickMapAt(position: LatLon, clickAreaSizeInMeters: Double): Boolean = true
 
     override fun onClickClose(onConfirmed: () -> Unit) {
         onConfirmed()

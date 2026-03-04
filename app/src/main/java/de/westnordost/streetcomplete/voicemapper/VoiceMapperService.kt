@@ -352,6 +352,17 @@ class VoiceMapperService(
                 val nearbyData = getNearbyMapData(location)
                 val currentRoad = findCurrentRoad(location, nearbyData)
                 
+                // Sort nearby elements by distance, closest first, for best AI context
+                val sortedNearby = nearbyData.toList()
+                    .filter { it.tags.isNotEmpty() }
+                    .sortedBy { element ->
+                        val pos = (element as? Node)?.position
+                            ?: nearbyData.getGeometry(element.type, element.id)?.center
+                            ?: return@sortedBy Double.MAX_VALUE
+                        distanceBetween(location.latitude, location.longitude, pos.latitude, pos.longitude)
+                    }
+                    .take(60)
+
                 // Create context for AI
                 val context = VoiceMapperContext(
                     transcription = transcription,
@@ -361,7 +372,7 @@ class VoiceMapperService(
                     speed = location.speed,
                     currentRoadName = currentRoad?.tags?.get("name"),
                     currentRoadRef = currentRoad?.tags?.get("ref"),
-                    nearbyElements = nearbyData.toList().take(50) // Limit for context size
+                    nearbyElements = sortedNearby
                 )
                 
                 // Send to AI for processing
@@ -371,48 +382,58 @@ class VoiceMapperService(
                     // Resolve element search criteria and expand applyToAll edits
                     val resolvedEdits = mutableListOf<VoiceMapperEdit>()
                     for (edit in aiResponse.edits) {
-                        if ((edit.elementSearchName != null || edit.elementSearchTags.isNotEmpty())
-                            && edit.elementKey == null) {
-                            // Find matching elements in nearby map data
-                            val matches = findElementsBySearch(edit, nearbyData, location)
-                            if (matches.isEmpty()) {
-                                // No match found — keep as pending without elementKey so user can see it
-                                resolvedEdits.add(edit.copy(
-                                    description = edit.description + " (no match found nearby)",
-                                    confidence = minOf(edit.confidence, 0.5f)
-                                ))
-                            } else {
-                                for (match in matches) {
-                                    val matchGeom = nearbyData.getGeometry(match.type, match.id)
+                        when {
+                            edit.elementKey != null -> {
+                                // AI specified exact element ID — resolve its position from nearby data
+                                val matchGeom = nearbyData.getGeometry(edit.elementKey.type, edit.elementKey.id)
+                                resolvedEdits.add(edit.copy(position = matchGeom?.center ?: edit.position))
+                            }
+                            edit.elementSearchName != null || edit.elementSearchTags.isNotEmpty() -> {
+                                // Find matching elements in nearby map data by search criteria
+                                val matches = findElementsBySearch(edit, nearbyData, location)
+                                if (matches.isEmpty()) {
                                     resolvedEdits.add(edit.copy(
-                                        elementKey = ElementKey(match.type, match.id),
-                                        position = matchGeom?.center,
-                                        description = edit.description + " (${match.tags["name"] ?: match.tags["brand"] ?: "${match.type}/${match.id}"})"
+                                        description = edit.description + " (no match found nearby)",
+                                        confidence = minOf(edit.confidence, 0.5f)
                                     ))
+                                } else {
+                                    for (match in matches) {
+                                        val matchGeom = nearbyData.getGeometry(match.type, match.id)
+                                        resolvedEdits.add(edit.copy(
+                                            elementKey = ElementKey(match.type, match.id),
+                                            position = matchGeom?.center,
+                                            description = edit.description + " (${match.tags["name"] ?: match.tags["brand"] ?: "${match.type}/${match.id}"})"
+                                        ))
+                                    }
                                 }
                             }
-                        } else {
-                            // Compute position for CREATE_NODE edits without explicit position
-                            val withPosition = if (edit.position == null && edit.type == EditType.CREATE_NODE) {
-                                val pos = calculateRelativePosition(
-                                    edit.relativeSide ?: RelativeSide.RIGHT,
-                                    edit.distanceAhead,
-                                    edit.distanceSide
-                                ) ?: LatLon(location.latitude, location.longitude)
-                                edit.copy(position = pos)
-                            } else edit
-                            resolvedEdits.add(withPosition)
+                            else -> {
+                                // Compute position for CREATE_NODE edits without explicit position
+                                val withPosition = if (edit.position == null && edit.type == EditType.CREATE_NODE) {
+                                    val pos = calculateRelativePosition(
+                                        edit.relativeSide ?: RelativeSide.RIGHT,
+                                        edit.distanceAhead,
+                                        edit.distanceSide
+                                    ) ?: LatLon(location.latitude, location.longitude)
+                                    edit.copy(position = pos)
+                                } else edit
+                                resolvedEdits.add(withPosition)
+                            }
                         }
                     }
+                    // Stamp the source transcription onto every edit for traceability
+                    val stamped = resolvedEdits.map {
+                        if (it.sourceTranscription == null) it.copy(sourceTranscription = transcription) else it
+                    }
 
-                    if (autoConfirmEdits && resolvedEdits.all { it.confidence >= 0.9f }) {
-                        for (edit in resolvedEdits) { applyEdit(edit) }
+                    if (autoConfirmEdits && stamped.all { it.confidence >= 0.9f }) {
+                        for (edit in stamped) { applyEdit(edit) }
                         persistEdits()
-                        _events.emit(VoiceMapperEvent.EditsApplied(resolvedEdits.size))
+                        _events.emit(VoiceMapperEvent.EditsApplied(stamped.size))
                     } else {
-                        _pendingEdits.value = _pendingEdits.value + resolvedEdits
+                        _pendingEdits.value = _pendingEdits.value + stamped
                         persistEdits()
-                        _events.emit(VoiceMapperEvent.EditsPending(resolvedEdits))
+                        _events.emit(VoiceMapperEvent.EditsPending(stamped))
                     }
                 } else {
                     _events.emit(VoiceMapperEvent.Error(aiResponse.errorMessage ?: "Failed to process command"))
@@ -680,7 +701,7 @@ class VoiceMapperService(
             prefs.edit()
                 .putString("pending", pendingArr.toString())
                 .putString("submitted", submittedArr.toString())
-                .apply()
+                .commit()
         } catch (e: Exception) {
             Log.e(TAG, "Failed to persist edits", e)
         }
@@ -718,6 +739,7 @@ class VoiceMapperService(
         elementSearchName?.let { obj.put("searchName", it) }
         obj.put("searchTags", JSONObject(elementSearchTags as Map<*, *>))
         obj.put("applyAll", applyToAll)
+        sourceTranscription?.let { obj.put("srcTrans", it) }
         return obj
     }
 
@@ -746,7 +768,8 @@ class VoiceMapperService(
             aiExplanation = optString("aiExp").takeIf { it.isNotEmpty() },
             elementSearchName = optString("searchName").takeIf { it.isNotEmpty() },
             elementSearchTags = searchTags,
-            applyToAll = getBoolean("applyAll")
+            applyToAll = getBoolean("applyAll"),
+            sourceTranscription = optString("srcTrans").takeIf { it.isNotEmpty() }
         )
     } catch (e: Exception) {
         Log.e(TAG, "Failed to deserialize edit", e)
