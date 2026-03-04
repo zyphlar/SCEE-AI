@@ -32,7 +32,7 @@ fun SendErrorReportDialog(
             Column {
                 Text(stringResource(Res.string.crash_message))
                 Button({
-                    val clip = ClipData.newPlainText("SCEE error message", reportText)
+                    val clip = ClipData.newPlainText("SCEE-AI error message", reportText)
                     (context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager).setPrimaryClip(clip)
                 }) {
                     Text(androidx.compose.ui.res.stringResource(android.R.string.copy)) }

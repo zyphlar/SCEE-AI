@@ -73,7 +73,7 @@ fun AboutScreen(
 
     Column(Modifier.fillMaxSize()) {
         TopAppBar(
-            title = { Text(stringResource(Res.string.action_about2) + " SCEE") },
+            title = { Text(stringResource(Res.string.action_about2) + " SCEE-AI") },
             windowInsets = AppBarDefaults.topAppBarWindowInsets,
             navigationIcon = { IconButton(onClick = onClickBack) { BackIcon() } },
         )
@@ -125,7 +125,7 @@ fun AboutScreen(
                 ) { OpenInBrowserIcon() }
 
                 Preference(
-                    name = "SCEE: " + stringResource(Res.string.about_title_faq),
+                    name = "SCEE-AI: " + stringResource(Res.string.about_title_faq),
                     onClick = { uriHandler.openUri("https://wiki.openstreetmap.org/wiki/SCEE/FAQ") },
                 ) { OpenInBrowserIcon() }
 
@@ -160,7 +160,7 @@ fun AboutScreen(
                 ) { OpenInBrowserIcon() }
 
                 Preference(
-                    name = "SCEE: " + stringResource(Res.string.about_title_translate),
+                    name = "SCEE-AI: " + stringResource(Res.string.about_title_translate),
                     onClick = { uriHandler.openUri("https://translate.codeberg.org/projects/scee/") },
                 ) { OpenInBrowserIcon() }
 
@@ -170,7 +170,7 @@ fun AboutScreen(
                 ) { OpenInBrowserIcon() }
 
                 Preference(
-                    name = "SCEE " + stringResource(Res.string.about_title_repository),
+                    name = "SCEE-AI " + stringResource(Res.string.about_title_repository),
                     onClick = { uriHandler.openUri("https://github.com/Helium314/SCEE") },
                 ) { OpenInBrowserIcon() }
             }

@@ -50,7 +50,7 @@ fun Context.sendEmail(to: String, subject: String, text: String? = null) {
     val intent = Intent(Intent.ACTION_SENDTO).apply {
         data = "mailto:".toUri()
         putExtra(Intent.EXTRA_EMAIL, arrayOf(to))
-        putExtra(Intent.EXTRA_SUBJECT, "SCEE " + BuildConfig.VERSION_NAME + " " + subject)
+        putExtra(Intent.EXTRA_SUBJECT, "SCEE-AI " + BuildConfig.VERSION_NAME + " " + subject)
         if (text != null) {
             putExtra(Intent.EXTRA_TEXT, text)
         }

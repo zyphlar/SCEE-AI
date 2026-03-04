@@ -106,7 +106,7 @@ fun MainMenuDialog(
                         BigMenuButton(
                             onClick = { onDismissRequest(); onClickAbout() },
                             icon = { Icon(painterResource(Res.drawable.ic_info_outline_48), null) },
-                            text = stringResource(Res.string.action_about2) + " SCEE",
+                            text = stringResource(Res.string.action_about2) + " SCEE-AI",
                         )
                     }
                     Divider()
@@ -174,7 +174,7 @@ fun MainMenuDialog(
                         BigMenuButton(
                             onClick = { onDismissRequest(); onClickAbout() },
                             icon = { Icon(painterResource(Res.drawable.ic_info_outline_48), null) },
-                            text = stringResource(Res.string.action_about2) + " SCEE",
+                            text = stringResource(Res.string.action_about2) + " SCEE-AI",
                         )
                         BigMenuButton(
                             onClick = { onDismissRequest(); onClickDownload() },

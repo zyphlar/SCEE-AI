@@ -324,7 +324,7 @@ class VoiceMapperAIProcessor(
     }
 
     private fun buildSystemPrompt(): String = """
-You are an expert OpenStreetMap mapper assistant embedded in the SCEE app.
+You are an expert OpenStreetMap mapper assistant embedded in the SCEE-AI app.
 OUTPUT ONLY A SINGLE RAW JSON OBJECT. No explanations, no prose, no markdown, no code fences.
 Your entire response must be valid JSON that can be parsed directly.
 
