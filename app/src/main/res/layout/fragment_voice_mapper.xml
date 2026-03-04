@@ -64,7 +64,7 @@
 
         </androidx.cardview.widget.CardView>
 
-        <!-- Pending edits container -->
+        <!-- Pending edits container — hidden by default, toggled by badge button -->
         <androidx.cardview.widget.CardView
             android:id="@+id/pendingEditsContainer"
             android:layout_width="match_parent"
@@ -142,6 +142,23 @@
             android:gravity="center"
             android:orientation="horizontal">
 
+            <!-- Text-input toggle button (pencil icon) -->
+            <androidx.cardview.widget.CardView
+                android:layout_width="48dp"
+                android:layout_height="48dp"
+                android:layout_marginEnd="8dp"
+                app:cardCornerRadius="24dp"
+                app:cardElevation="4dp">
+                <ImageButton
+                    android:id="@+id/textInputToggleButton"
+                    android:layout_width="match_parent"
+                    android:layout_height="match_parent"
+                    android:background="?attr/selectableItemBackgroundBorderless"
+                    android:contentDescription="Type command"
+                    android:src="@drawable/ic_edit"
+                    android:tint="@android:color/darker_gray" />
+            </androidx.cardview.widget.CardView>
+
             <!-- Settings button -->
             <androidx.cardview.widget.CardView
                 android:layout_width="48dp"
@@ -202,14 +219,38 @@
                     android:tint="@android:color/darker_gray" />
             </androidx.cardview.widget.CardView>
 
+            <!-- Pending edits badge button — shows count, hidden when no pending edits -->
+            <androidx.cardview.widget.CardView
+                android:id="@+id/pendingCountCard"
+                android:layout_width="48dp"
+                android:layout_height="48dp"
+                android:layout_marginStart="8dp"
+                android:visibility="gone"
+                app:cardCornerRadius="24dp"
+                app:cardElevation="4dp"
+                tools:visibility="visible">
+                <TextView
+                    android:id="@+id/pendingCountBadge"
+                    android:layout_width="match_parent"
+                    android:layout_height="match_parent"
+                    android:background="@color/primary"
+                    android:gravity="center"
+                    android:textColor="@android:color/white"
+                    android:textSize="14sp"
+                    android:textStyle="bold"
+                    tools:text="3" />
+            </androidx.cardview.widget.CardView>
+
         </LinearLayout>
 
-        <!-- Text input for testing / manual entry -->
+        <!-- Text input for testing / manual entry — hidden by default -->
         <LinearLayout
+            android:id="@+id/textInputRow"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="8dp"
-            android:orientation="horizontal">
+            android:orientation="horizontal"
+            android:visibility="gone">
 
             <EditText
                 android:id="@+id/textCommandInput"

@@ -151,8 +151,9 @@ class VoiceMapperPendingEditForm : AbstractOverlayForm() {
 
     override fun isFormComplete(): Boolean = true
 
-    // Override close to skip "discard changes?" dialog — tags are saved in the service when OK is pressed
+    // Auto-save on close so the user never loses tag edits regardless of how they dismiss
     override fun onClickClose(onConfirmed: () -> Unit) {
+        saveEditToService()
         onConfirmed()
     }
 

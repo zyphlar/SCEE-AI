@@ -11,6 +11,9 @@ import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
 import android.util.Log
 import androidx.core.content.ContextCompat
+import de.westnordost.streetcomplete.data.osm.mapdata.ElementType
+import org.json.JSONArray
+import org.json.JSONObject
 import de.westnordost.streetcomplete.data.osm.edits.ElementEditsController
 import de.westnordost.streetcomplete.data.osm.edits.create.CreateNodeAction
 import de.westnordost.streetcomplete.data.osm.edits.delete.DeletePoiNodeAction
@@ -102,7 +105,8 @@ class VoiceMapperService(
     }
     
     fun initialize() {
-        if (speechRecognizer != null) return  // already initialized
+        if (speechRecognizer != null) return  // already initialized — edits already loaded
+        loadPersistedEdits()
         if (!SpeechRecognizer.isRecognitionAvailable(context)) {
             scope.launch {
                 _events.emit(VoiceMapperEvent.Error("Speech recognition not available on this device"))
@@ -184,25 +188,29 @@ class VoiceMapperService(
                 applyEdit(edit)
             }
             _pendingEdits.value = emptyList()
+            persistEdits()
             _events.emit(VoiceMapperEvent.EditsApplied(edits.size))
         }
     }
-    
+
     fun cancelPendingEdits() {
         _pendingEdits.value = emptyList()
+        persistEdits()
         scope.launch {
             _events.emit(VoiceMapperEvent.EditsCancelled)
         }
     }
-    
+
     fun removeEdit(edit: VoiceMapperEdit) {
         _pendingEdits.value = _pendingEdits.value.filter { it.id != edit.id }
+        persistEdits()
     }
-    
+
     fun modifyEdit(edit: VoiceMapperEdit) {
         _pendingEdits.value = _pendingEdits.value.map {
             if (it.id == edit.id) edit else it
         }
+        persistEdits()
     }
 
     /** Returns a stable negative node ID for use as a synthetic map element ID */
@@ -222,6 +230,7 @@ class VoiceMapperService(
         scope.launch {
             applyEdit(edit)
             _pendingEdits.value = _pendingEdits.value.filter { it.id != edit.id }
+            persistEdits()
             _events.emit(VoiceMapperEvent.EditsApplied(1))
         }
     }
@@ -398,9 +407,11 @@ class VoiceMapperService(
 
                     if (autoConfirmEdits && resolvedEdits.all { it.confidence >= 0.9f }) {
                         for (edit in resolvedEdits) { applyEdit(edit) }
+                        persistEdits()
                         _events.emit(VoiceMapperEvent.EditsApplied(resolvedEdits.size))
                     } else {
                         _pendingEdits.value = _pendingEdits.value + resolvedEdits
+                        persistEdits()
                         _events.emit(VoiceMapperEvent.EditsPending(resolvedEdits))
                     }
                 } else {
@@ -655,7 +666,93 @@ class VoiceMapperService(
         speechRecognizer?.destroy()
         speechRecognizer = null
     }
-    
+
+    // ── Persistence ──────────────────────────────────────────────────────────
+
+    private val prefs by lazy {
+        context.getSharedPreferences("voice_mapper_edits", Context.MODE_PRIVATE)
+    }
+
+    private fun persistEdits() {
+        try {
+            val pendingArr = JSONArray().apply { _pendingEdits.value.forEach { put(it.toJson()) } }
+            val submittedArr = JSONArray().apply { _submittedEdits.value.forEach { put(it.toJson()) } }
+            prefs.edit()
+                .putString("pending", pendingArr.toString())
+                .putString("submitted", submittedArr.toString())
+                .apply()
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to persist edits", e)
+        }
+    }
+
+    private fun loadPersistedEdits() {
+        try {
+            prefs.getString("pending", null)?.let { json ->
+                val arr = JSONArray(json)
+                _pendingEdits.value = (0 until arr.length()).mapNotNull { arr.getJSONObject(it).toEdit() }
+            }
+            prefs.getString("submitted", null)?.let { json ->
+                val arr = JSONArray(json)
+                _submittedEdits.value = (0 until arr.length()).mapNotNull { arr.getJSONObject(it).toEdit() }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to load persisted edits", e)
+        }
+    }
+
+    private fun VoiceMapperEdit.toJson(): JSONObject {
+        val obj = JSONObject()
+        obj.put("id", id)
+        obj.put("type", type.name)
+        obj.put("description", description)
+        obj.put("tags", JSONObject(tags as Map<*, *>))
+        obj.put("tagsToRemove", JSONArray(tagsToRemove))
+        position?.let { obj.put("lat", it.latitude); obj.put("lon", it.longitude) }
+        elementKey?.let { obj.put("elType", it.type.name); obj.put("elId", it.id) }
+        obj.put("confidence", confidence.toDouble())
+        relativeSide?.let { obj.put("side", it.name) }
+        obj.put("ahead", distanceAhead)
+        obj.put("sideDist", distanceSide)
+        aiExplanation?.let { obj.put("aiExp", it) }
+        elementSearchName?.let { obj.put("searchName", it) }
+        obj.put("searchTags", JSONObject(elementSearchTags as Map<*, *>))
+        obj.put("applyAll", applyToAll)
+        return obj
+    }
+
+    private fun JSONObject.toEdit(): VoiceMapperEdit? = try {
+        val tagsObj = optJSONObject("tags") ?: JSONObject()
+        val tags = buildMap<String, String> { tagsObj.keys().forEach { put(it, tagsObj.getString(it)) } }
+        val remArr = optJSONArray("tagsToRemove") ?: JSONArray()
+        val tagsToRemove = buildSet<String> { for (i in 0 until remArr.length()) add(remArr.getString(i)) }
+        val position = if (has("lat")) LatLon(getDouble("lat"), getDouble("lon")) else null
+        val elementKey = if (has("elType")) ElementKey(
+            ElementType.valueOf(getString("elType")), getLong("elId")) else null
+        val searchTagsObj = optJSONObject("searchTags") ?: JSONObject()
+        val searchTags = buildMap<String, String> { searchTagsObj.keys().forEach { put(it, searchTagsObj.getString(it)) } }
+        VoiceMapperEdit(
+            id = getString("id"),
+            type = EditType.valueOf(getString("type")),
+            description = getString("description"),
+            tags = tags,
+            tagsToRemove = tagsToRemove,
+            position = position,
+            elementKey = elementKey,
+            confidence = getDouble("confidence").toFloat(),
+            relativeSide = optString("side").takeIf { it.isNotEmpty() }?.let { RelativeSide.valueOf(it) },
+            distanceAhead = getDouble("ahead"),
+            distanceSide = getDouble("sideDist"),
+            aiExplanation = optString("aiExp").takeIf { it.isNotEmpty() },
+            elementSearchName = optString("searchName").takeIf { it.isNotEmpty() },
+            elementSearchTags = searchTags,
+            applyToAll = getBoolean("applyAll")
+        )
+    } catch (e: Exception) {
+        Log.e(TAG, "Failed to deserialize edit", e)
+        null
+    }
+
     companion object {
         private const val TAG = "VoiceMapperService"
         private val ROAD_TYPES = setOf(

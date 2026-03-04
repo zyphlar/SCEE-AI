@@ -106,36 +106,59 @@ class VoiceMapperFragment : Fragment(), IsCloseableBottomSheet {
         }
     }
     
+    private var pendingListVisible = false
+
     private fun setupUI() {
         // Voice button
         binding.voiceButton.setOnClickListener {
             toggleListening()
         }
-        
+
         // Long press for continuous mode
         binding.voiceButton.setOnLongClickListener {
             viewModel.toggleContinuousMode()
             true
         }
-        
+
         // Confirm all button
         binding.confirmAllButton.setOnClickListener {
             viewModel.confirmAllEdits()
         }
-        
+
         // Cancel all button
         binding.cancelAllButton.setOnClickListener {
             viewModel.cancelAllEdits()
+            hidePendingList()
         }
-        
+
         // Settings button
         binding.settingsButton.setOnClickListener {
             showSettingsDialog()
         }
-        
+
         // Help button
         binding.helpButton.setOnClickListener {
             showHelpDialog()
+        }
+
+        // Pending count badge — toggles the full pending list
+        binding.pendingCountCard.setOnClickListener {
+            if (pendingListVisible) hidePendingList() else showPendingList()
+        }
+
+        // Text-input toggle button
+        binding.textInputToggleButton.setOnClickListener {
+            val row = binding.textInputRow
+            if (row.visibility == View.VISIBLE) {
+                row.visibility = View.GONE
+                binding.textInputToggleButton.setColorFilter(
+                    androidx.core.content.ContextCompat.getColor(requireContext(), android.R.color.darker_gray))
+            } else {
+                row.visibility = View.VISIBLE
+                binding.textInputToggleButton.setColorFilter(
+                    androidx.core.content.ContextCompat.getColor(requireContext(), R.color.primary))
+                binding.textCommandInput.requestFocus()
+            }
         }
 
         // Text command input
@@ -145,12 +168,22 @@ class VoiceMapperFragment : Fragment(), IsCloseableBottomSheet {
                 submitTextCommand(); true
             } else false
         }
-        
+
         // Pending edits list
         binding.pendingEditsList.apply {
             layoutManager = LinearLayoutManager(requireContext())
             adapter = pendingEditsAdapter
         }
+    }
+
+    private fun showPendingList() {
+        pendingListVisible = true
+        binding.pendingEditsContainer.visibility = View.VISIBLE
+    }
+
+    private fun hidePendingList() {
+        pendingListVisible = false
+        binding.pendingEditsContainer.visibility = View.GONE
     }
     
     private fun observeState() {
@@ -180,13 +213,18 @@ class VoiceMapperFragment : Fragment(), IsCloseableBottomSheet {
                     }
                 }
                 
-                // Observe pending edits
+                // Observe pending edits — update badge; don't auto-expand the list
                 launch {
                     viewModel.pendingEdits.collectLatest { edits ->
                         pendingEditsAdapter.submitList(edits)
-                        binding.pendingEditsContainer.visibility = 
-                            if (edits.isEmpty()) View.GONE else View.VISIBLE
                         binding.pendingEditsCount.text = "${edits.size} pending"
+                        if (edits.isEmpty()) {
+                            binding.pendingCountCard.visibility = View.GONE
+                            hidePendingList()
+                        } else {
+                            binding.pendingCountCard.visibility = View.VISIBLE
+                            binding.pendingCountBadge.text = edits.size.toString()
+                        }
                     }
                 }
                 
