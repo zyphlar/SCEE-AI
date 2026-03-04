@@ -5,10 +5,12 @@ import androidx.lifecycle.LifecycleOwner
 import de.westnordost.streetcomplete.data.download.tiles.TilesRect
 import de.westnordost.streetcomplete.data.download.tiles.enclosingTilesRect
 import de.westnordost.streetcomplete.data.osm.edits.MapDataWithEditsSource
+import de.westnordost.streetcomplete.data.osm.geometry.ElementPointGeometry
 import de.westnordost.streetcomplete.data.osm.mapdata.BoundingBox
 import de.westnordost.streetcomplete.data.osm.mapdata.ElementKey
 import de.westnordost.streetcomplete.data.osm.mapdata.ElementType
 import de.westnordost.streetcomplete.data.osm.mapdata.MapDataWithGeometry
+import de.westnordost.streetcomplete.data.osm.mapdata.Node
 import de.westnordost.streetcomplete.data.osm.mapdata.Relation
 import de.westnordost.streetcomplete.data.osm.mapdata.key
 import de.westnordost.streetcomplete.data.overlays.Overlay
@@ -212,6 +214,11 @@ class StyleableOverlayManager(
         viewLifecycleScope.launch { updateCurrentScreenArea() }
     }
 
+    /** Force a full reload of overlay data for the current screen area. */
+    fun forceRefresh() {
+        invalidate()
+    }
+
     private suspend fun updateCurrentScreenArea() {
         val zoom = map.cameraPosition.zoom
         if (zoom < MIN_ZOOM) return
@@ -297,7 +304,9 @@ class StyleableOverlayManager(
     ): Sequence<Pair<ElementKey, StyledElement>> =
         overlay.getStyledElements(mapData).mapNotNull { (element, style) ->
             val key = element.key
-            val geometry = mapData.getGeometry(element.type, element.id) ?: return@mapNotNull null
+            val geometry = mapData.getGeometry(element.type, element.id)
+                // Fallback for synthetic nodes (e.g. VoiceMapper pending edits) not in mapData
+                ?: if (element is Node) ElementPointGeometry(element.position) else return@mapNotNull null
             key to StyledElement(element, geometry, style)
         }
 

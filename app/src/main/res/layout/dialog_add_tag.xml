@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:padding="16dp">
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Key"
+        android:textSize="12sp"
+        android:textStyle="bold" />
+
+    <AutoCompleteTextView
+        android:id="@+id/keyEdit"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="4dp"
+        android:completionThreshold="1"
+        android:fontFamily="monospace"
+        android:hint="e.g., amenity, shop, name"
+        android:inputType="text"
+        tools:text="amenity" />
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="16dp"
+        android:text="Value"
+        android:textSize="12sp"
+        android:textStyle="bold" />
+
+    <AutoCompleteTextView
+        android:id="@+id/valueEdit"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="4dp"
+        android:completionThreshold="1"
+        android:fontFamily="monospace"
+        android:hint="e.g., restaurant, yes"
+        android:inputType="text"
+        tools:text="fast_food" />
+
+</LinearLayout>

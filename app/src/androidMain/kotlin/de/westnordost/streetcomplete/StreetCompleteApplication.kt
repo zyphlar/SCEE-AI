@@ -58,6 +58,7 @@ import de.westnordost.streetcomplete.data.weeklyosm.weeklyOsmModule
 import de.westnordost.streetcomplete.overlays.overlaysModule
 import de.westnordost.streetcomplete.quests.questsModule
 import de.westnordost.streetcomplete.screens.about.aboutScreenModule
+import de.westnordost.streetcomplete.voicemapper.voiceMapperModule
 import de.westnordost.streetcomplete.screens.main.mainModule
 import de.westnordost.streetcomplete.screens.measure.arModule
 import de.westnordost.streetcomplete.screens.settings.LAST_KNOWN_DB_VERSION
@@ -160,6 +161,7 @@ class StreetCompleteApplication : Application() {
                 feedsModule,
                 androidModule,
                 externalSourceModule,
+                voiceMapperModule,
             )
         }
 

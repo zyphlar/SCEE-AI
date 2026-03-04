@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(./gradlew assembleDebug:*)",
+      "Bash(JAVA_HOME=\"/c/Program Files/Eclipse Adoptium/jdk-21.0.1.12-hotspot\" ./gradlew assembleDebug:*)",
+      "Bash(xargs grep:*)",
+      "Bash(./gradlew :app:assembleDebug:*)",
+      "Bash(JAVA_HOME=\"/c/Program Files/Eclipse Adoptium/jdk-21.0.1.12-hotspot\" ./gradlew :app:assembleDebug:*)",
+      "Bash(JAVA_HOME=\"/c/Program Files/Eclipse Adoptium/jdk-21.0.1.12-hotspot\" ./gradlew :app:installDebug:*)"
+    ]
+  }
+}

@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- colors_voice_mapper.xml - Add these colors to your existing colors.xml -->
+<resources>
+    
+    <!-- Voice Mapper specific colors -->
+    <color name="voice_mapper_accent">#2196F3</color>
+    <color name="voice_mapper_mic_active">#4CAF50</color>
+    <color name="voice_mapper_error">#F44336</color>
+    
+    <!-- Confidence level colors -->
+    <color name="confidence_high">#2E7D32</color>
+    <color name="confidence_high_bg">#E8F5E9</color>
+    <color name="confidence_medium">#F57C00</color>
+    <color name="confidence_medium_bg">#FFF3E0</color>
+    <color name="confidence_low">#C62828</color>
+    <color name="confidence_low_bg">#FFEBEE</color>
+    
+    <!-- Edit type colors -->
+    <color name="edit_create">#4CAF50</color>
+    <color name="edit_modify">#FF9800</color>
+    <color name="edit_delete">#F44336</color>
+    
+</resources>

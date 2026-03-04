@@ -25,6 +25,7 @@ import de.westnordost.streetcomplete.overlays.things.ThingsOverlay
 import de.westnordost.streetcomplete.overlays.way_lit.WayLitOverlay
 import de.westnordost.streetcomplete.util.ktx.getFeature
 import de.westnordost.streetcomplete.util.ktx.getIds
+import de.westnordost.streetcomplete.voicemapper.VoiceMapperOverlay
 import org.koin.core.qualifier.named
 import org.koin.dsl.module
 
@@ -46,6 +47,7 @@ val overlaysModule = module {
                 get<Lazy<FeatureDictionary>>(named("FeatureDictionaryLazy")).value.getFeature(element)
             },
             get(),
+            get<VoiceMapperOverlay>(),
         )
     }
 }
@@ -55,18 +57,19 @@ fun overlaysRegistry(
     getCountryCodeByLocation: (LatLon) -> String?,
     getFeature: (Element) -> Feature?,
     prefs: ObservableSettings,
-) = OverlayRegistry(listOf(
-
-    0 to WayLitOverlay(),
-    6 to SurfaceOverlay(),
-    1 to SidewalkOverlay(),
-    5 to CyclewayOverlay(getCountryInfoByLocation),
-    2 to StreetParkingOverlay(),
-    3 to AddressOverlay(getCountryCodeByLocation),
-    4 to PlacesOverlay(getFeature),
-    8 to ThingsOverlay(getFeature),
-    7 to BuildingsOverlay(),
-    9 to MtbScaleOverlay(),
-//    (EE_QUEST_OFFSET + 1) to RestrictionOverlay(),
-    (EE_QUEST_OFFSET + 0) to CustomOverlay(prefs),
-))
+    voiceMapperOverlay: VoiceMapperOverlay? = null,
+) = OverlayRegistry(buildList {
+    add(0 to WayLitOverlay())
+    add(6 to SurfaceOverlay())
+    add(1 to SidewalkOverlay())
+    add(5 to CyclewayOverlay(getCountryInfoByLocation))
+    add(2 to StreetParkingOverlay())
+    add(3 to AddressOverlay(getCountryCodeByLocation))
+    add(4 to PlacesOverlay(getFeature))
+    add(8 to ThingsOverlay(getFeature))
+    add(7 to BuildingsOverlay())
+    add(9 to MtbScaleOverlay())
+//    add((EE_QUEST_OFFSET + 1) to RestrictionOverlay())
+    if (voiceMapperOverlay != null) add(10 to voiceMapperOverlay)
+    add((EE_QUEST_OFFSET + 0) to CustomOverlay(prefs))
+})

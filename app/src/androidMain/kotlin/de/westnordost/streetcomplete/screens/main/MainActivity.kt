@@ -119,6 +119,8 @@ import de.westnordost.streetcomplete.quests.custom.readFromUriToExternalFile
 import de.westnordost.streetcomplete.quests.note_discussion.NoteDiscussionForm
 import de.westnordost.streetcomplete.quests.tree.FILENAME_TREES
 import de.westnordost.streetcomplete.screens.BaseActivity
+import de.westnordost.streetcomplete.voicemapper.VoiceMapperFragment
+import de.westnordost.streetcomplete.voicemapper.VoiceMapperService
 import de.westnordost.streetcomplete.screens.main.bottom_sheet.CreateNoteFragment
 import de.westnordost.streetcomplete.screens.main.bottom_sheet.CreatePoiFragment
 import de.westnordost.streetcomplete.screens.main.bottom_sheet.InsertNodeFragment
@@ -224,6 +226,7 @@ class MainActivity :
     private val featureDictionary: Lazy<FeatureDictionary> by inject(named("FeatureDictionaryLazy"))
     private val soundFx: SoundFx by inject()
     private val levelFilter: LevelFilter by inject()
+    private val voiceMapperService: VoiceMapperService by inject()
     private val countryBoundaries: Lazy<CountryBoundaries> by inject(named("CountryBoundariesLazy"))
     private val questTypeRegistry: QuestTypeRegistry by inject()
     private val overlayRegistry: OverlayRegistry by inject()
@@ -374,6 +377,16 @@ class MainActivity :
         }
         observe(viewModel.reverseQuestOrder) {
             mapFragment?.setQuestOrder(it)
+        }
+        observe(viewModel.selectedOverlay) { overlay ->
+            if (overlay is de.westnordost.streetcomplete.voicemapper.VoiceMapperOverlay) {
+                onClickVoiceMapper()
+            } else if (bottomSheetFragment is VoiceMapperFragment) {
+                closeBottomSheet()
+            }
+        }
+        observe(voiceMapperService.pendingEdits) {
+            mapFragment?.refreshOverlay()
         }
     }
 
@@ -818,6 +831,11 @@ class MainActivity :
 
     private fun onLocationChanged(location: Location) {
         viewModel.locationState.value = LocationState.UPDATING
+        voiceMapperService.updateLocation(location, location.bearing)
+    }
+
+    private fun onClickVoiceMapper() {
+        showInBottomSheet(VoiceMapperFragment.newInstance())
     }
 
     //endregion
@@ -1184,8 +1202,27 @@ class MainActivity :
         Log.i(TAG, "showElementDetails for $elementKey")
         if (isElementCurrentlyDisplayed(elementKey)) return
         val overlay = viewModel.selectedOverlay.value ?: return
-        val geometry = mapDataWithEditsSource.getGeometry(elementKey.type, elementKey.id) ?: return
         val mapFragment = mapFragment ?: return
+
+        // Handle VoiceMapper pending-edit pins (synthetic negative-ID nodes)
+        if (overlay is de.westnordost.streetcomplete.voicemapper.VoiceMapperOverlay && elementKey.id < 0) {
+            val edit = voiceMapperService.getEditByNodeId(elementKey.id) ?: return
+            val position = edit.position ?: return
+            val geometry = de.westnordost.streetcomplete.data.osm.geometry.ElementPointGeometry(position)
+            val f = de.westnordost.streetcomplete.voicemapper.VoiceMapperPendingEditForm.newInstance(edit.id)
+            if (f.arguments == null) f.arguments = bundleOf()
+            val camera = mapFragment.cameraPosition
+            f.requireArguments().putAll(
+                AbstractOverlayForm.createArguments(overlay, null, geometry, camera?.rotation ?: 0.0, camera?.tilt ?: 0.0)
+            )
+            showInBottomSheet(f)
+            mapFragment.highlightGeometry(geometry)
+            mapFragment.highlightPins(overlay.icon, listOf(geometry.center))
+            mapFragment.hideNonHighlightedPins()
+            return
+        }
+
+        val geometry = mapDataWithEditsSource.getGeometry(elementKey.type, elementKey.id) ?: return
 
         // open note if it is blocking element
         val center = geometry.center

@@ -1,198 +1,238 @@
-[![Liberapay](https://img.shields.io/liberapay/patrons/Helium314.svg?color=gold&logo=liberapay)](https://liberapay.com/Helium314)
+# Voice Mapper for SCEE
 
-SCEE is a modified version of StreetComplete, aimed at experienced OSM users unhappy about the lack of advanced editing capabilities in normal StreetComplete.
-By default, most of the additional capabilities are disabled. Go through the settings (either in the app or [below](#differences-to-streetcomplete)) for details.
+A voice-based mapping feature for SCEE (StreetComplete Expert Edition) that allows hands-free addition, modification, and removal of map elements while driving, cycling, or walking.
 
-Please be aware that SCEE is not suitable for people used to discarding warning messages without reading!
-Users new to OpenStreetMap are best advised to use [StreetComplete](https://github.com/streetcomplete/StreetComplete).
+## Features
 
-Functionality added in SCEE is considerably less tested than what you might be used to in StreetComplete, so bugs or unexpected behavior may happen. If you encounter any, please report the issue.
+- **Voice Recognition**: Uses Android's built-in speech recognition for hands-free operation
+- **AI-Powered Understanding**: Leverages Claude AI to understand natural language commands and convert them to proper OSM tags
+- **Relative Positioning**: Automatically places POIs based on "left/right of road" and distance estimates
+- **Brand Recognition**: Knows hundreds of common brands (fast food, gas stations, retail) with proper Wikidata identifiers
+- **Address Handling**: Parses addresses and associates them with POIs
+- **Confirmation Flow**: Review and edit pending changes before they're applied
+- **Continuous Mode**: Long-press for continuous voice input while driving
+- **Audio Feedback**: Optional TTS confirmation of actions
 
-1. [Download](#download-scee)
-2. [Translate](#translations)
-3. [Additional permissions](#permissions)
-4. [Differences to StreetComplete](#differences-to-streetcomplete)
-5. [Contributing quests](#contributing-quests)
-6. [Differences in changesets](#changeset-differences-compared-to-streetcomplete)
+## Voice Command Examples
 
-[StreetComplete readme](README_StreetComplete.md)
+### Adding POIs
+```
+"McDonald's on the left"
+"On the right, Shell gas station"
+"On the left, KFC, Taco Bell, Wendy's with addresses 123, 125, 127"
+"Bench about 20 meters back on the left"
+"Fire hydrant on the right"
+```
 
-[SCEE FAQ](https://wiki.openstreetmap.org/wiki/SCEE/FAQ)
+### With Details
+```
+"Restaurant Italian cuisine on the left"
+"ATM Chase bank on the right"
+"Gas station, brand is BP, on the left"
+```
 
-## Download SCEE
+### Modifications
+```
+"The bakery is now a restaurant"
+"Change the name of the shop to Bob's Groceries"
+```
 
-[<img src="https://fdroid.gitlab.io/artwork/badge/get-it-on.png" alt="Get it on F-Droid" height="80">](https://f-droid.org/packages/de.westnordost.streetcomplete.expert/)
-[<img src="https://user-images.githubusercontent.com/663460/26973090-f8fdc986-4d14-11e7-995a-e7c5e79ed925.png" alt="Download APK from GitHub" height="80">](https://github.com/Helium314/SCEE/releases/latest)
+### Deletions
+```
+"Remove the ATM, it doesn't exist"
+"Delete the bench marker"
+```
 
-F-Droid releases of SCEE make use of reproducible builds, so releases on F-Droid and GitHub are signed with the same keys. This means you can switch between GitHub and F-Droid releases anytime without needing to uninstall first.
+## Integration Guide
 
-__F-Droid anti-feature__ _non-free network_: SCEE uses map tiles provided by [jawg](https://www.jawg.io), and optionally [aerial / satellite imagery](https://server.arcgisonline.com/arcgis/rest/services/World_Imagery/MapServer) by [Esri](https://www.esri.com) .
+### 1. Add Dependencies
 
-## Translations
-Translations for strings added in SCEE can be done [using Weblate at Codeberg](https://translate.codeberg.org/projects/scee/).
-You will need an account to update translations and add languages. Add the language you want to translate to in _Languages_ -> _Manage translated languages_ in the top menu bar.
+Add to your `app/build.gradle.kts`:
 
-## Permissions
-SCEE asks for two more permissions than StreetComplete: `ACCESS_BACKGROUND_LOCATION` and `POST_NOTIFICATIONS`. Both are requested and used only in feature to notify about nearby quests while the app is in the background.
+```kotlin
+dependencies {
+    // Existing dependencies...
+    
+    // For voice mapper
+    implementation("com.squareup.okhttp3:okhttp:4.12.0")
+    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.6.0")
+}
+```
 
-## Differences to StreetComplete
-* Non-optional differences to StreetComplete
-  * No star count on main screen
-  * When using auto-upload, an indicator now shows when there are changes waiting to be uploaded
-  * Downloading data will interrupt upload queue (will resume afterwards)
-  * Manual downloads can be queued instead of always cancelling the previous one
-  * Additional answers for some quests
-    * Additional building types
-    * Additional path surfaces
-    * Specify that a crossing is raised
-    * Answer "no seating, but not takeaway only"
-    * Add wheelchair description when answering wheelchair quest
-  * Move the "no cycleway" answer to more accessible position
-  * Highlight obstacles along the way for smoothness quests
-  * Open main menu when pressing menu key
-  * Open settings when pressing menu key in main menu dialog
-  * Allow switching to aerial view while adding or moving a node
-* New quests that are not eligible for StreetComplete, usually because some answers cannot be tagged, or because not everyone has the required knowledge to answer the quest. These quests can only be enabled when expert mode is on.
-  * Material of benches and picnic tables
-  * Phone number and website
-  * Cuisine
-  * Healthcare speciality
-  * Outdoor seating type
-  * Service building type
-  * Service building operator
-  * Street cabinet type
-  * Artwork type
-  * Railway platform number
-  * Subway entrance reference number
-  * Trail visibility of hiking trails
-  * Genus / species of trees
-    * Allows providing a file containing translated tree names instead of the default English ones
-  * Color of building roofs
-  * Whether a barrier is locked
-  * Height of barriers
-  * Whether pharmacy is dispensing prescription drugs
-  * ~Destination of some road types after intersections~ currently not working
-  * Which beers are sold in restaurants
-  * Elevation, ref, sports and name of guideposts
-  * Width of footways
-  * Size and type of maps
-  * Via ferrata scale
-  * Difficulty and ref for pistes, and whether they are lit
-  * Quests based on external sources
-    * Osmose quest showing Osmose issues as quests, with filter options
-    * Custom quest from CSV file, allows creating nodes (see in-app description)
-  * Show POI quests with the sole purpose of indicating existence of elements of chosen type (may show labels)
-  * Option to show only quests added in SCEE in quest selection menu
-  * Some "other answers" result in a modified changeset comment (because in SCEE they may contain more unexpected changes)
-  * Crossing markings quest now allows specifying the markings instead of yes / no (adjust in quest settings)
-* Customizable overlays: Choose which elements are highlighted, and which tag is used to determine the color
-* ~Turn restriction overlay~ currently not working
-* Settings
-  * Additional darker dark theme
-  * Background map can be changed to aerial / satellite imagery
-  * Adjust location update intervals
-  * Expert mode that enables capabilities, some of which can be dangerous when used by inexperienced OSM contributors
-    * Directly edit tags, with suggestions from iD and last used values
-    * Add nodes everywhere, either free-floating or as part of a way
-      * inserting nodes into a way may actually re-use existing nodes at that position
-    * Delete free-floating nodes
-    * Additional "other answers"
-      * add `access=private` to benches, bicycle parkings, picnic tables, pitches, (leisure) tracks and recycling containers
-      * add/adjust highway access
-      * tag highways as under construction (with finish date)
-      * tag buildings as demolished
-      * add conditional maxspeed (maxspeed quest only)
-    * Allow moving nodes that are part of a way (including a clear warning about changing geometry)
-    * Allow disabling and moving the note quest
-    * Allow closing notes
-    * Allow entering `addr:unit` in address overlay and house number quest
-  * Some of the settings below can only be enabled in expert mode
-  * Quest settings for most quests, mostly for customized element selection, but also for other things like allowing generic paved surface answer without note
-    * Such customization should be handled with care. There are some safeguards, but modifying element selection could still lead to inappropriate tagging, quests being asked over and over again, and maybe app crashes.
-    * Quests without settings need to be handled individually. Please open an issue if you want specific settings.
-  * UI settings
-    * Quick settings button for switching preset, background and reverse quest order. Also contains a level filter for displayed quests / overlay elements
-    * Quick selector for overlays (on main screen)
-      * long-press custom overlays to edit
-    * Show next quest for this element immediately
-    * Show nearby quests / other quests for same element when quest form is open
-    * Hide button for temporarily hiding quests (long press for permanent hide)
-    * Show keyboard automatically on showing feature search dialog when adding a node
-    * Auto-select first edit when opening edit history
-    * Search features in local language and all languages enabled in the system
-    * Select how many lines the form needs to have to move recent selection to front
-    * Show all main menu items as grid
-    * Add a _switch preset_ button to main menu (only if not a grid)
-    * Capitalize words when entering names
-    * Zoom using volume buttons
-  * Display settings
-    * ~Disable 3D buildings~ currently not available, as 3D buildings are disabled in general with since the MapLibre switch
-    * Show arrows indicating direction of highlighted way
-    * Highlight geometries for nearby quests
-    * Disable quest solved animation
-    * Provide GPX track and have it always shown on the map
-    * Provide GeoJson file and have geometries shown on the map (and text from _name_ property)
-  * Quest settings
-    * Hide or increase priority of quests depending on time of day
-    * Force resurvey for specific tags
-    * Different quest settings for each preset
-    * Dynamic quest creation for immediately applying changed quest settings and resurvey intervals
-    * Notifications about nearby quests when app is in background
-    * Hide overlay-specific quests when overlay is enabled
-  * Note settings
-    * Create personal notes in a GPX file (adds a new button when creating a note)
-    * Swap OSM and GPX note buttons, for switching default notes
-    * Disable hiding the keyboard before creating a note
-    * Create custom quests like notes
-    * Save full-size photos made for notes
-    * Hide notes created by specific users
-  * Data management settings
-    * Disable auto-download
-    * Disable always downloading map data on manual download, even if data is fresh
-    * Choose tile URL for aerial imagery
-    * Set data retention time
-    * Disable local statistics updates (hides achievement messages)
-    * Import / export
-      * Custom overlays
-      * Quest presets, including per-preset quest settings
-      * Hidden quests
-      * All other settings, including quest settings and recently selected answers. Does not export login data.
-* When uploading from a debug build without being logged in, all uploads return fake success without contacting OSM API. This is used for testing parts of the uploader.
+### 2. Add Permissions
 
-Database and preferences files are compatible with StreetComplete, so if you have root privileges you can transfer them in either direction.
+Add to `AndroidManifest.xml`:
 
-## Contributing quests
-The original [contributing guidelines](README_StreetComplete.md#contributing) are still valid, but note that the [guidelines for contributing a quest](QUEST_GUIDELINES.md) have been significantly relaxed:
-* Creating, moving and deleting nodes is possible
-  * Inserting nodes into a way is possible
-* Guidelines are useful suggestions, but not enforced
-* Quests may be based on external sources like Osmose, not just on element selection
+```xml
+<uses-permission android:name="android.permission.RECORD_AUDIO" />
+<uses-permission android:name="android.permission.INTERNET" />
+```
 
-## Changeset differences compared to StreetComplete
-This section is aimed for people trying to decide whether a bad edit done in SCEE is fault of the user or of the app (SCEE modifications).
-In general, SCEE changesets will contain changes very similar to StreetComplete changesets, with following differences:
-* `created_by` is set to `StreetComplete_ee <version>`
-* _AddBuildingType_ has additional answers `barn`, `sty`, `stable`, `cowshed`, `digester`, `presbytery`, `riding_hall`, `sports_hall`, `tent`, `elevator`, and `transformer_tower`
-* _AddPathSurface_ and _AddRoadSurface_ have additional surfaces `metal_grid`, `stepping_stones` and `chipseal`
-* _AddMaxSpeed_ may tag `maxspeed:conditional`
-* [Discardable tags](https://wiki.openstreetmap.org/wiki/Discardable_tags) are removed automatically 
-* Any node may be moved, even if it is part of a way or relation
-* Any node may be deleted, or have all tags removed if it's not free-floating
-* `check_date:*` may be added without resurvey
-* Wheelchair quests may add `wheelchair:description` and `wheelchair:description:<language>`
-* An element at the same position as a note may be edited (this is blocked in normal SC)
-* Most quests may apply to an extended range of elements (user-defined)
-* Starting with SCEE 52.0, some answers create separate changesets with comment `Other edits in context of: <orignal quest changeset comment>`.
-This happens for changes that can occur in StreetComplete, such as moving or deleting a node, changing shop types, removing surface, changing highway to steps and removing sidewalks.
-Furthermore SCEE adds new answers leading to such a changeset comment:
-  * All quest types related to roads / paths may adjust access tags
-  * Quests types asking about about benches, picnic tables, recycling containers, bicycle parkings and sports tracks/pitches may tag `access=private`
-  * All quest types related to buildings may change `building` to `demolished:building`
-* SCEE contains some additional [quests (scroll to bottom)](app/src/main/java/de/westnordost/streetcomplete/quests/QuestsModule.kt) and [overlays](app/src/main/java/de/westnordost/streetcomplete/overlays/OverlaysModule.kt), recognizable in the files by `EE_QUEST_OFFSET`
-  * They usually do not fulfill the requirements for StreetComplete, and need to be enabled by the user first
-* There are further "quest types" (though neither quests nor overlays, they are identified in `StreetComplete:quest_type` changeset tag)
-  * _TagEdit_: may modify any tag
-  * _AddNode_: adds nodes, free floating or part of ways, (may change tags of existing way node instead of inserting a new one under some circumstances)
+### 3. Copy Source Files
 
-## Screenshots
-<img src="metadata/en-US/images/phoneScreenshots/screenshot1.png" width="240"/> <img src="metadata/en-US/images/phoneScreenshots/screenshot2.png" width="240"/> <img src="metadata/en-US/images/phoneScreenshots/screenshot3.png" width="240"/> <img src="metadata/en-US/images/phoneScreenshots/screenshot4.png" width="240"/> <img src="metadata/en-US/images/phoneScreenshots/screenshot5.png" width="240"/> <img src="metadata/en-US/images/phoneScreenshots/screenshot6.png" width="240"/> <img src="metadata/en-US/images/phoneScreenshots/screenshot7.png" width="240"/> <img src="metadata/en-US/images/phoneScreenshots/screenshot8.png" width="240"/>
+Copy the entire `voicemapper` package to:
+```
+app/src/main/java/de/westnordost/streetcomplete/voicemapper/
+```
+
+### 4. Copy Resources
+
+Copy the layout and drawable files:
+```
+app/src/main/res/layout/fragment_voice_mapper.xml
+app/src/main/res/layout/item_pending_edit.xml
+app/src/main/res/layout/item_tag.xml
+app/src/main/res/layout/dialog_edit_voice_mapper.xml
+app/src/main/res/layout/dialog_add_tag.xml
+app/src/main/res/layout/dialog_voice_mapper_settings.xml
+
+app/src/main/res/drawable/bg_voice_button.xml
+app/src/main/res/drawable/bg_continuous_indicator.xml
+app/src/main/res/drawable/bg_chip.xml
+app/src/main/res/drawable/bg_edit_underline.xml
+app/src/main/res/drawable/ic_mic.xml
+app/src/main/res/drawable/ic_mic_active.xml
+app/src/main/res/drawable/ic_check.xml
+app/src/main/res/drawable/ic_close.xml
+app/src/main/res/drawable/ic_edit.xml
+app/src/main/res/drawable/ic_settings.xml
+app/src/main/res/drawable/ic_help.xml
+
+app/src/main/res/values/colors_voice_mapper.xml
+```
+
+### 5. Register Koin Module
+
+In your Application class, add the voiceMapperModule:
+
+```kotlin
+// In StreetCompleteApplication.kt or equivalent
+
+startKoin {
+    androidContext(this@StreetCompleteApplication)
+    modules(
+        // ... existing modules
+        voiceMapperModule
+    )
+}
+```
+
+### 6. Add API Key Setting
+
+Add a preference for the Anthropic API key in your settings:
+
+```kotlin
+// In preferences
+<EditTextPreference
+    android:key="anthropic_api_key"
+    android:title="Claude API Key"
+    android:summary="Required for AI-powered voice mapping"
+    android:inputType="textPassword" />
+```
+
+### 7. Add Voice Mapper Button to Main Screen
+
+In `MainActivity.kt` or your main map fragment:
+
+```kotlin
+// Add a floating action button or menu item
+voiceMapperButton.setOnClickListener {
+    supportFragmentManager.beginTransaction()
+        .add(R.id.fragment_container, VoiceMapperFragment.newInstance())
+        .addToBackStack("voice_mapper")
+        .commit()
+}
+```
+
+### 8. Connect Location Updates
+
+Forward location updates to the VoiceMapperService:
+
+```kotlin
+// In your location listener
+locationManager.addLocationListener { location ->
+    voiceMapperService.updateLocation(location, location.bearing)
+}
+```
+
+## Configuration
+
+### Settings Available
+
+- **Audio Feedback**: Enable/disable TTS confirmations
+- **Auto-confirm High Confidence**: Automatically apply edits with ≥90% confidence in continuous mode
+- **Default Side**: Which side to place POIs when not specified
+- **Default Distance**: Distance from road center (in meters)
+
+### Offline Mode
+
+The voice mapper includes local parsing for common patterns (brand names, basic POIs) that works without an API connection. Complex commands require the Claude API.
+
+## Architecture
+
+```
+voicemapper/
+├── VoiceMapperService.kt      # Main service - speech recognition & coordination
+├── VoiceMapperAIProcessor.kt  # AI processing with Claude API
+├── VoiceMapperModels.kt       # Data classes, OSM feature mappings
+├── VoiceMapperActions.kt      # Edit actions (create, modify, delete nodes)
+├── VoiceMapperFragment.kt     # UI fragment
+├── VoiceMapperViewModel.kt    # ViewModel for UI state
+├── VoiceMapperEditDialog.kt   # Edit confirmation dialog
+├── PendingEditsAdapter.kt     # RecyclerView adapter
+├── VoiceMapperQuestType.kt    # Quest type for changesets
+└── VoiceMapperModule.kt       # Koin DI module
+```
+
+## OSM Tagging
+
+The voice mapper generates proper OSM tags including:
+
+- Standard amenity/shop tags
+- Brand names with brand:wikidata
+- Address components (addr:housenumber, addr:street)
+- Cuisine for restaurants/fast food
+- Additional contextual tags
+
+### Brand Database
+
+Includes 100+ brands across categories:
+- Fast food (McDonald's, KFC, Taco Bell, etc.)
+- Gas stations (Shell, BP, Exxon, etc.)
+- Retail (Walmart, Target, CVS, etc.)
+- Banks (Chase, Bank of America, etc.)
+- Hotels (Marriott, Hilton, Holiday Inn, etc.)
+
+## Changeset Tags
+
+Edits made via voice mapper use:
+- `created_by`: StreetComplete_ee with VoiceMapper
+- `comment`: "Voice mapped POIs"
+- `source`: survey
+
+## Known Limitations
+
+1. **GPS Accuracy**: Position accuracy depends on GPS signal quality
+2. **Speech Recognition**: Works best in quiet environments
+3. **Bearing**: Requires device to provide accurate bearing (works best when moving)
+4. **Complex Edits**: Way modifications and relation edits not yet supported
+5. **Language**: Currently English-focused; other languages require AI API
+
+## Contributing
+
+Contributions welcome! Areas for improvement:
+- Additional brand/POI database entries
+- Multi-language support
+- Enhanced offline capabilities
+- Way editing support
+- Photo attachment
+
+## License
+
+GPL-3.0 (same as SCEE)
+
+## Credits
+
+- SCEE by Helium314
+- StreetComplete by Tobias Zwick
+- Claude AI by Anthropic

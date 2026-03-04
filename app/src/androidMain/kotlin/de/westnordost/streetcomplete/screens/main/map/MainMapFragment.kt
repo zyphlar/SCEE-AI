@@ -385,6 +385,11 @@ class MainMapFragment : MapFragment(), ShowsGeometryMarkers {
         styleableOverlayManager?.onNewScreenPosition()
     }
 
+    /** Force-refresh the overlay layer (e.g. when overlay data changes outside mapDataSource). */
+    fun refreshOverlay() {
+        styleableOverlayManager?.forceRefresh()
+    }
+
     private fun onUpdatedPinMode() {
         /* both managers use the same resource (PinsMapComponent), so the newly visible manager
            may only be activated after the old has been deactivated
