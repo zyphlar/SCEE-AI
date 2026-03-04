@@ -135,6 +135,29 @@
 
         </androidx.cardview.widget.CardView>
 
+        <!-- Command log — shows recent commands and their results -->
+        <androidx.cardview.widget.CardView
+            android:id="@+id/commandLogCard"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="8dp"
+            android:visibility="gone"
+            app:cardCornerRadius="8dp"
+            app:cardElevation="2dp">
+
+            <TextView
+                android:id="@+id/commandLogText"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:fontFamily="monospace"
+                android:maxLines="6"
+                android:padding="8dp"
+                android:textSize="10sp"
+                android:textColor="@android:color/black"
+                tools:text="✓ Starbucks on the left → 1 edit pending&#10;✗ the bakery is now a restaurant → no match" />
+
+        </androidx.cardview.widget.CardView>
+
         <!-- Voice button and controls row -->
         <LinearLayout
             android:layout_width="match_parent"

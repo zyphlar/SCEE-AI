@@ -22,6 +22,7 @@ class VoiceMapperViewModel(
     // State flows
     val isListening: StateFlow<Boolean> = voiceMapperService.isListening
     val pendingEdits: StateFlow<List<VoiceMapperEdit>> = voiceMapperService.pendingEdits
+    val commandLog: StateFlow<List<String>> = voiceMapperService.commandLog
     
     private val _currentTranscription = MutableStateFlow<String?>(null)
     val currentTranscription: StateFlow<String?> = _currentTranscription.asStateFlow()

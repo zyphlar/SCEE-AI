@@ -464,6 +464,118 @@ object OSMFeatures {
         "red roof inn" to mapOf("tourism" to "motel", "brand" to "Red Roof Inn", "brand:wikidata" to "Q7304949")
     )
     
+    /**
+     * Cuisine and informal business-type suffixes that appear as the last word(s) of a spoken
+     * business name, e.g. "Jimmy's pizza" → amenity=restaurant, cuisine=pizza, name="Jimmy's Pizza".
+     * These are NOT exposed via lookupFeature() — only used by lookupNamedBusiness().
+     */
+    val CUISINE_TYPES = mapOf(
+        "pizza" to mapOf("amenity" to "restaurant", "cuisine" to "pizza"),
+        "pizzeria" to mapOf("amenity" to "restaurant", "cuisine" to "pizza"),
+        "pizza place" to mapOf("amenity" to "restaurant", "cuisine" to "pizza"),
+        "burger" to mapOf("amenity" to "fast_food", "cuisine" to "burger"),
+        "burgers" to mapOf("amenity" to "fast_food", "cuisine" to "burger"),
+        "burger joint" to mapOf("amenity" to "fast_food", "cuisine" to "burger"),
+        "burger place" to mapOf("amenity" to "fast_food", "cuisine" to "burger"),
+        "sushi" to mapOf("amenity" to "restaurant", "cuisine" to "sushi"),
+        "sushi bar" to mapOf("amenity" to "restaurant", "cuisine" to "sushi"),
+        "ramen" to mapOf("amenity" to "restaurant", "cuisine" to "ramen"),
+        "ramen shop" to mapOf("amenity" to "restaurant", "cuisine" to "ramen"),
+        "pho" to mapOf("amenity" to "restaurant", "cuisine" to "vietnamese"),
+        "tacos" to mapOf("amenity" to "fast_food", "cuisine" to "mexican"),
+        "taco" to mapOf("amenity" to "fast_food", "cuisine" to "mexican"),
+        "taqueria" to mapOf("amenity" to "fast_food", "cuisine" to "mexican"),
+        "mexican" to mapOf("amenity" to "restaurant", "cuisine" to "mexican"),
+        "mexican restaurant" to mapOf("amenity" to "restaurant", "cuisine" to "mexican"),
+        "chinese" to mapOf("amenity" to "restaurant", "cuisine" to "chinese"),
+        "chinese restaurant" to mapOf("amenity" to "restaurant", "cuisine" to "chinese"),
+        "italian" to mapOf("amenity" to "restaurant", "cuisine" to "italian"),
+        "italian restaurant" to mapOf("amenity" to "restaurant", "cuisine" to "italian"),
+        "thai" to mapOf("amenity" to "restaurant", "cuisine" to "thai"),
+        "thai restaurant" to mapOf("amenity" to "restaurant", "cuisine" to "thai"),
+        "indian" to mapOf("amenity" to "restaurant", "cuisine" to "indian"),
+        "indian restaurant" to mapOf("amenity" to "restaurant", "cuisine" to "indian"),
+        "bbq" to mapOf("amenity" to "restaurant", "cuisine" to "bbq"),
+        "barbeque" to mapOf("amenity" to "restaurant", "cuisine" to "bbq"),
+        "barbecue" to mapOf("amenity" to "restaurant", "cuisine" to "bbq"),
+        "smokehouse" to mapOf("amenity" to "restaurant", "cuisine" to "bbq"),
+        "seafood" to mapOf("amenity" to "restaurant", "cuisine" to "seafood"),
+        "steakhouse" to mapOf("amenity" to "restaurant", "cuisine" to "steak"),
+        "steak house" to mapOf("amenity" to "restaurant", "cuisine" to "steak"),
+        "steak" to mapOf("amenity" to "restaurant", "cuisine" to "steak"),
+        "grill" to mapOf("amenity" to "restaurant"),
+        "diner" to mapOf("amenity" to "restaurant"),
+        "bistro" to mapOf("amenity" to "restaurant"),
+        "brasserie" to mapOf("amenity" to "restaurant"),
+        "eatery" to mapOf("amenity" to "restaurant"),
+        "cantina" to mapOf("amenity" to "restaurant", "cuisine" to "mexican"),
+        "noodles" to mapOf("amenity" to "restaurant", "cuisine" to "noodles"),
+        "noodle house" to mapOf("amenity" to "restaurant", "cuisine" to "noodles"),
+        "kebab" to mapOf("amenity" to "fast_food", "cuisine" to "kebab"),
+        "wings" to mapOf("amenity" to "fast_food", "cuisine" to "chicken"),
+        "sandwiches" to mapOf("amenity" to "fast_food", "cuisine" to "sandwich"),
+        "sandwich shop" to mapOf("amenity" to "fast_food", "cuisine" to "sandwich"),
+        "donuts" to mapOf("amenity" to "fast_food", "cuisine" to "donut"),
+        "doughnuts" to mapOf("amenity" to "fast_food", "cuisine" to "donut"),
+        "donut shop" to mapOf("amenity" to "fast_food", "cuisine" to "donut"),
+        "ice cream" to mapOf("amenity" to "ice_cream"),
+        "creamery" to mapOf("amenity" to "ice_cream"),
+        "gelato" to mapOf("amenity" to "ice_cream"),
+        "brewery" to mapOf("amenity" to "bar", "microbrewery" to "yes"),
+        "taproom" to mapOf("amenity" to "bar"),
+        "lounge" to mapOf("amenity" to "bar"),
+        "tavern" to mapOf("amenity" to "bar"),
+        "saloon" to mapOf("amenity" to "bar"),
+        "gastropub" to mapOf("amenity" to "pub"),
+        "deli" to mapOf("shop" to "deli"),
+        "grocery" to mapOf("shop" to "convenience"),
+        "market" to mapOf("shop" to "convenience"),
+        "grocery store" to mapOf("shop" to "supermarket"),
+        "salon" to mapOf("shop" to "beauty"),
+        "hair salon" to mapOf("shop" to "hairdresser"),
+        "barber shop" to mapOf("shop" to "barber"),
+        "spa" to mapOf("leisure" to "spa"),
+        "laundromat" to mapOf("shop" to "laundry"),
+        "dry cleaner" to mapOf("shop" to "dry_cleaning"),
+        "dry cleaners" to mapOf("shop" to "dry_cleaning"),
+        "auto shop" to mapOf("shop" to "car_repair"),
+        "auto repair" to mapOf("shop" to "car_repair"),
+        "tire shop" to mapOf("shop" to "tyres"),
+        "tires" to mapOf("shop" to "tyres"),
+        "pharmacy" to mapOf("amenity" to "pharmacy"),
+        "dental" to mapOf("amenity" to "dentist"),
+        "dentist" to mapOf("amenity" to "dentist"),
+        "clinic" to mapOf("amenity" to "clinic"),
+        "vet clinic" to mapOf("amenity" to "veterinary"),
+        "insurance" to mapOf("office" to "insurance"),
+        "realty" to mapOf("office" to "estate_agent"),
+        "florist" to mapOf("shop" to "florist"),
+        "flowers" to mapOf("shop" to "florist"),
+        "jewelry" to mapOf("shop" to "jewelry"),
+        "jewelers" to mapOf("shop" to "jewelry"),
+        "jewellers" to mapOf("shop" to "jewelry"),
+        "hardware" to mapOf("shop" to "hardware"),
+        "liquor store" to mapOf("shop" to "alcohol"),
+        "liquor" to mapOf("shop" to "alcohol"),
+        "inn" to mapOf("tourism" to "hotel"),
+        "suites" to mapOf("tourism" to "hotel"),
+        "lodge" to mapOf("tourism" to "hotel"),
+        "resort" to mapOf("tourism" to "hotel"),
+        "car dealership" to mapOf("shop" to "car"),
+        "auto dealership" to mapOf("shop" to "car"),
+        "nursery" to mapOf("shop" to "garden_centre"),
+        "garden center" to mapOf("shop" to "garden_centre"),
+        "tattoo" to mapOf("shop" to "tattoo"),
+        "tattoo shop" to mapOf("shop" to "tattoo"),
+        "dispensary" to mapOf("shop" to "cannabis"),
+        "thrift store" to mapOf("shop" to "second_hand"),
+        "thrift" to mapOf("shop" to "second_hand"),
+        "pawn shop" to mapOf("shop" to "pawnbroker"),
+        "storage" to mapOf("shop" to "storage_rental"),
+        "printing" to mapOf("shop" to "copyshop"),
+        "copy shop" to mapOf("shop" to "copyshop")
+    )
+
     private val ARTICLES = setOf("a", "an", "the", "some", "one", "small", "large", "big", "old", "new")
 
     /**
@@ -501,6 +613,36 @@ object OSMFeatures {
     private fun getAllEntries(): Map<String, Map<String, String>> =
         FAST_FOOD_BRANDS + GAS_STATIONS + RETAIL + BANKS +
         FOOD_AND_DRINK + AMENITIES + INFRASTRUCTURE + OFFICES + LODGING
+
+    /**
+     * Parse a named business from a spoken phrase, e.g.:
+     *   "Jimmy's pizza"     → name="Jimmy's Pizza", tags={amenity=restaurant, cuisine=pizza}
+     *   "Bob's burgers"     → name="Bob's Burgers", tags={amenity=fast_food, cuisine=burger}
+     *   "Smith's bakery"    → name="Smith's Bakery", tags={shop=bakery}
+     *   "Li's Chinese restaurant" → name="Li's Chinese Restaurant", tags={amenity=restaurant, cuisine=chinese}
+     *
+     * Tries matching the last 1–3 words as a type keyword, longest match first.
+     * Returns (capitalizedFullName, osmTags) or null if no recognizable type is found.
+     */
+    fun lookupNamedBusiness(input: String): Pair<String, Map<String, String>>? {
+        val words = input.trim().split(Regex("\\s+")).filter { it.isNotBlank() }
+        if (words.size < 2) return null
+
+        // Title-case the full input for use as the name tag
+        val fullName = words.joinToString(" ") { w ->
+            if (w.length > 1) w.replaceFirstChar { it.uppercase() } else w
+        }
+
+        for (suffixLen in minOf(3, words.size - 1) downTo 1) {
+            val suffix = words.takeLast(suffixLen).joinToString(" ")
+            val namePart = words.dropLast(suffixLen).joinToString(" ")
+            if (namePart.isBlank() || namePart.length < 2) continue
+            // Try cuisine types first, then general feature dictionary
+            val tags = CUISINE_TYPES[suffix] ?: exactLookup(suffix) ?: continue
+            return fullName to tags
+        }
+        return null
+    }
 
     /**
      * Get all known feature names for fuzzy matching

@@ -92,6 +92,16 @@ class VoiceMapperService(
 
     private val _events = MutableSharedFlow<VoiceMapperEvent>()
     val events: SharedFlow<VoiceMapperEvent> = _events
+
+    private val _commandLog = MutableStateFlow<List<String>>(emptyList())
+    val commandLog: StateFlow<List<String>> = _commandLog
+
+    private fun logCommand(entry: String) {
+        _commandLog.value = (listOf(entry) + _commandLog.value).take(10)
+    }
+
+    private fun truncate(text: String, maxLen: Int = 45) =
+        if (text.length <= maxLen) text else text.take(maxLen - 1) + "…"
     
     // Configuration
     var autoConfirmEdits: Boolean = false
@@ -426,20 +436,30 @@ class VoiceMapperService(
                         if (it.sourceTranscription == null) it.copy(sourceTranscription = transcription) else it
                     }
 
-                    if (autoConfirmEdits && stamped.all { it.confidence >= 0.9f }) {
+                    if (stamped.isEmpty()) {
+                        val msg = "No match for: \"${truncate(transcription)}\""
+                        logCommand("✗ ${truncate(transcription)} → no match")
+                        _events.emit(VoiceMapperEvent.Error(msg))
+                    } else if (autoConfirmEdits && stamped.all { it.confidence >= 0.9f }) {
+                        logCommand("✓ ${truncate(transcription)} → ${stamped.size} edit${if (stamped.size == 1) "" else "s"} (auto-confirmed)")
                         for (edit in stamped) { applyEdit(edit) }
                         persistEdits()
                         _events.emit(VoiceMapperEvent.EditsApplied(stamped.size))
                     } else {
+                        logCommand("✓ ${truncate(transcription)} → ${stamped.size} edit${if (stamped.size == 1) "" else "s"} pending")
                         _pendingEdits.value = _pendingEdits.value + stamped
                         persistEdits()
                         _events.emit(VoiceMapperEvent.EditsPending(stamped))
                     }
                 } else {
-                    _events.emit(VoiceMapperEvent.Error(aiResponse.errorMessage ?: "Failed to process command"))
+                    val errMsg = aiResponse.errorMessage ?: "Failed to process command"
+                    logCommand("✗ ${truncate(transcription)} → $errMsg")
+                    _events.emit(VoiceMapperEvent.Error(errMsg))
                 }
             } catch (e: Exception) {
-                _events.emit(VoiceMapperEvent.Error("Processing error: ${e.message}"))
+                val errMsg = "Processing error: ${e.message}"
+                logCommand("✗ ${truncate(transcription)} → $errMsg")
+                _events.emit(VoiceMapperEvent.Error(errMsg))
             }
         }
     }

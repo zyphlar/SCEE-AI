@@ -228,6 +228,18 @@ class VoiceMapperFragment : Fragment(), IsCloseableBottomSheet {
                     }
                 }
                 
+                // Observe command log
+                launch {
+                    viewModel.commandLog.collectLatest { entries ->
+                        if (entries.isEmpty()) {
+                            binding.commandLogCard.visibility = View.GONE
+                        } else {
+                            binding.commandLogCard.visibility = View.VISIBLE
+                            binding.commandLogText.text = entries.joinToString("\n")
+                        }
+                    }
+                }
+
                 // Observe events
                 launch {
                     viewModel.events.collectLatest { event ->
@@ -396,25 +408,50 @@ class VoiceMapperFragment : Fragment(), IsCloseableBottomSheet {
     private fun showHelpDialog() {
         val helpText = """
             Voice Mapping Commands:
-            
-            Adding POIs:
+
+            Simple POIs:
             • "McDonald's on the left"
-            • "Gas station Shell on the right"
-            • "On the left, KFC, Taco Bell, addresses 123, 125"
-            
-            With details:
+            • "Shell gas station on the right"
+            • "KFC, Taco Bell on the left, addresses 123, 125"
             • "Bench about 20 meters back"
             • "Fire hydrant on the left, just passed it"
-            
-            Modifications:
+
+            Named businesses (name + type):
+            • "Jimmy's pizza on the left"
+            • "Bob's burgers ahead"
+            • "Li's Chinese restaurant on the right"
+            • "Sal's auto repair at 456 Main"
+
+            Complex positioning:
+            • "20 yards back left at the corner is Jimmy's pizza"
+            • "100 feet ahead on the right, Shell station"
+            • "50 meters back right, there's a bench"
+            • "At the corner on the left is a CVS"
+
+            Multiple + addresses:
+            • "On the left, KFC and Taco Bell, addresses 123 and 125"
+            • "McDonald's right at 200, Burger King right at 202"
+
+            Modifications (find nearby element and update it):
             • "The bakery is now a restaurant"
-            • "Remove the ATM, doesn't exist"
-            
+            • "The Shell station is closed down"
+            • "The crossing has traffic lights"
+            • "That road's surface is asphalt"
+            • "Speed limit is 35"
+            • "The café has free wifi"
+            • "The bench has no backrest"
+
+            Deletions:
+            • "Remove the ATM, it doesn't exist"
+            • "The phone booth is gone"
+
             Tips:
-            • Speak clearly and at moderate pace
-            • Include left/right for positioning
-            • Long press mic for continuous mode
-            • Tap pending edits to modify before confirming
+            • Speak clearly at moderate pace
+            • Include left/right for new POI placement
+            • Yards, feet, and meters all work for distance
+            • "Back left / back right / ahead left" for compound positioning
+            • Long-press mic for continuous mapping mode
+            • Tap the pending badge to review before confirming
         """.trimIndent()
         
         androidx.appcompat.app.AlertDialog.Builder(requireContext())

@@ -14,7 +14,8 @@
       "Bash(JAVA_HOME=\"/c/Program Files/Microsoft/jdk-21.0.6.7-hotspot\" ./gradlew assembleDebug:*)",
       "Bash(\"$ADB\" install:*)",
       "Bash(\"$ADB\" logcat:*)",
-      "Bash(\"/c/Users/Will/AppData/Local/Android/Sdk/platform-tools/adb.exe\" logcat:*)"
+      "Bash(\"/c/Users/Will/AppData/Local/Android/Sdk/platform-tools/adb.exe\" logcat:*)",
+      "Bash(/c/Users/Will/AppData/Local/Android/Sdk/platform-tools/adb.exe install:*)"
     ]
   }
 }

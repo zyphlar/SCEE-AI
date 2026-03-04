@@ -58,6 +58,7 @@ class VoiceMapperAIProcessor(
      */
     private fun tryLocalParsing(context: VoiceMapperContext): VoiceMapperAIResponse? {
         val transcription = context.transcription.lowercase().trim()
+        Log.d(TAG, "tryLocalParsing: \"$transcription\"")
 
         // Defer modification / existential commands to the AI — it handles them better
         val isModification = transcription.contains(" is now ") ||
@@ -80,103 +81,159 @@ class VoiceMapperAIProcessor(
                 !transcription.contains(" is to the ") &&
                 !transcription.contains(" is a ") &&
                 !transcription.contains(" is an "))
-        if (isModification) return null
+        if (isModification) {
+            Log.d(TAG, "tryLocalParsing: deferring to AI (modification pattern detected)")
+            return null
+        }
 
-        // Parse side
-        val side = when {
+        // ── Direction / side detection ─────────────────────────────────────────────
+        // Compound directions take priority ("back left" = behind + to the left)
+        val hasBackLeft  = transcription.contains("back left")  || transcription.contains("left back")
+        val hasBackRight = transcription.contains("back right") || transcription.contains("right back")
+        val hasAheadLeft  = transcription.contains("ahead left")  || transcription.contains("left ahead")
+        val hasAheadRight = transcription.contains("ahead right") || transcription.contains("right ahead")
+        // "back" / "behind" / "just passed" without an explicit side → center, negative distance
+        val hasBack = transcription.contains(" back") || transcription.contains("behind") ||
+            transcription.contains("just passed") || transcription.contains("i just passed")
+        val hasFwd  = transcription.contains("ahead") || transcription.contains("in front") ||
+            transcription.contains("forward") || transcription.contains("straight ahead")
+
+        val side: RelativeSide? = when {
+            hasBackLeft || hasAheadLeft -> RelativeSide.LEFT
+            hasBackRight || hasAheadRight -> RelativeSide.RIGHT
             transcription.contains("on the left") || transcription.contains("to the left") ||
             transcription.contains("left side") || transcription.contains("on my left") -> RelativeSide.LEFT
             transcription.contains("on the right") || transcription.contains("to the right") ||
             transcription.contains("right side") || transcription.contains("on my right") -> RelativeSide.RIGHT
-            transcription.contains("ahead") || transcription.contains("in front") ||
-            transcription.contains("straight ahead") -> RelativeSide.CENTER
+            hasFwd || hasBack -> RelativeSide.CENTER
             else -> null
         }
 
-        // Parse distance phrases: "about 20 meters back", "50 m ahead", "100 metres behind"
-        val distanceBackPattern = Regex("""(?:about|around|roughly|~)?\s*(\d+)\s*(?:meters?|metres?|m)\b[^a-z]*(back|behind|ago)""")
-        val distanceAheadPattern = Regex("""(?:about|around|roughly|~)?\s*(\d+)\s*(?:meters?|metres?|m)\b[^a-z]*(ahead|forward|in front)""")
-        val distanceSidePattern = Regex("""(?:about|around|roughly|~)?\s*(\d+)\s*(?:meters?|metres?|m)\b""")
+        // ── Distance parsing (meters, yards, feet, miles) ──────────────────────────
+        // Matches: "20 yards", "100 feet", "50 m", "0.5 miles", optionally prefixed with ~about
+        val distancePattern = Regex(
+            """(?:about|around|roughly|approximately|~)?\s*(\d+(?:\.\d+)?)\s*(meters?|metres?|m\b|yards?|yds?\b|feet|foot|ft\b|miles?\b|mi\b)"""
+        )
+        val distMatches = distancePattern.findAll(transcription).toList()
+        val distanceNumbersUsed = mutableSetOf<Int>()
+        var computedDistanceAhead = 0.0
 
-        val distBackMatch = distanceBackPattern.find(transcription)
-        val distAheadMatch = distanceAheadPattern.find(transcription)
-        val computedDistanceAhead: Double = when {
-            distBackMatch != null -> -(distBackMatch.groupValues[1].toDoubleOrNull() ?: 0.0)
-            distAheadMatch != null -> distAheadMatch.groupValues[1].toDoubleOrNull() ?: 0.0
-            else -> 0.0
+        if (distMatches.isNotEmpty()) {
+            val m = distMatches.first()
+            val value = m.groupValues[1].toDoubleOrNull() ?: 0.0
+            val unit  = m.groupValues[2].trimEnd()
+            val meters = when {
+                unit.startsWith("yard") || unit.startsWith("yd") -> value * 0.9144
+                unit == "feet" || unit == "foot" || unit == "ft" -> value * 0.3048
+                unit.startsWith("mile") || unit == "mi"          -> value * 1609.344
+                else                                             -> value   // meters
+            }
+            // Negative if going backward; positive if going forward
+            val isBackward = hasBack && !hasFwd
+            computedDistanceAhead = if (isBackward) -meters else meters
+            m.groupValues[1].toDoubleOrNull()?.toInt()?.let { distanceNumbersUsed.add(it) }
         }
 
-        // Numbers that are part of distance expressions must NOT become house numbers
-        val distanceNumbersUsed = buildSet<Int> {
-            distBackMatch?.groupValues?.get(1)?.toIntOrNull()?.let { add(it) }
-            distAheadMatch?.groupValues?.get(1)?.toIntOrNull()?.let { add(it) }
-        }
-
-        // Explicitly named addresses ("with address 123" / "addresses 123, 125")
+        // ── Address parsing ─────────────────────────────────────────────────────────
         val addressPattern = Regex("""(?:address(?:es)?|numbers?)\s*(?:are|is)?\s*([\d,\s]+)""")
         val addressMatch = addressPattern.find(transcription)
         val explicitAddresses = addressMatch?.groupValues?.get(1)
-            ?.split(Regex("[,\\s]+"))
-            ?.filter { it.isNotBlank() }
-            ?.mapNotNull { it.trim().toIntOrNull() }
-            ?: emptyList()
+            ?.split(Regex("[,\\s]+"))?.filter { it.isNotBlank() }
+            ?.mapNotNull { it.trim().toIntOrNull() } ?: emptyList()
 
-        val numberPattern = Regex("""(\d{1,5})""")
         val addresses = if (explicitAddresses.isNotEmpty()) {
             explicitAddresses
         } else {
-            // Generic numbers — exclude any used as distance values
-            numberPattern.findAll(transcription)
+            Regex("""\d{1,5}""").findAll(transcription)
                 .mapNotNull { it.value.toIntOrNull() }
                 .filter { it !in distanceNumbersUsed }
                 .toList()
         }
 
-        // Effective side: if only distance keywords (back/ahead) without explicit side, use CENTER
+        // Effective side: compound-back directions assign the side already;
+        // pure "back" with no explicit side → CENTER
         val effectiveSide = side ?: if (computedDistanceAhead != 0.0) RelativeSide.CENTER else null
+        Log.d(TAG, "tryLocalParsing: side=$side effectiveSide=$effectiveSide distanceAhead=$computedDistanceAhead distNums=$distanceNumbersUsed addresses=$addresses")
 
+        // ── Part-by-part POI extraction ─────────────────────────────────────────────
         val edits = mutableListOf<VoiceMapperEdit>()
         val parts = transcription
-            .replace(" and ", ",")
-            .replace(", and ", ",")
-            .split(",")
-            .map { it.trim() }
+            .replace(" and ", ",").replace(", and ", ",")
+            .split(",").map { it.trim() }
 
         var addressIndex = 0
         for (part in parts) {
             val cleanPart = part
-                .replace(Regex("on the (left|right)"), "")
-                .replace(Regex("to the (left|right)"), "")
-                .replace(Regex("(left|right) side"), "")
-                .replace(Regex("on my (left|right)"), "")
-                .replace(Regex("address(?:es)?\\s*(?:are|is)?\\s*[\\d,\\s]+"), "")
-                .replace(Regex("with address(?:es)?.*"), "")
-                .replace(Regex("numbers?\\s*(?:are|is)?\\s*[\\d,\\s]+"), "")
-                // Remove distance phrases entirely
-                .replace(Regex("""(?:about|around|roughly|~)?\s*\d+\s*(?:meters?|metres?|m)\b[^a-z]*(?:back|behind|ahead|forward|ago|away)?"""), "")
-                .replace(Regex("\\d{1,5}"), "")
+                // Remove compound direction phrases
+                .replace(Regex("""\b(back|ahead)\s+(left|right)\b"""), "")
+                .replace(Regex("""\b(left|right)\s+(back|ahead)\b"""), "")
+                // Remove simple direction phrases
+                .replace(Regex("""\bon the (left|right)\b"""), "")
+                .replace(Regex("""\bto the (left|right)\b"""), "")
+                .replace(Regex("""\b(left|right) side\b"""), "")
+                .replace(Regex("""\bon my (left|right)\b"""), "")
+                .replace(Regex("""\b(ahead|behind|back|forward)\b"""), "")
+                // Remove address phrases
+                .replace(Regex("""address(?:es)?\s*(?:are|is)?\s*[\d,\s]+"""), "")
+                .replace(Regex("""with address(?:es)?.*"""), "")
+                .replace(Regex("""numbers?\s*(?:are|is)?\s*[\d,\s]+"""), "")
+                // Remove all distance+unit phrases (all units, with optional direction suffix)
+                .replace(Regex("""(?:about|around|roughly|approximately|~)?\s*\d+(?:\.\d+)?\s*(?:meters?|metres?|m\b|yards?|yds?\b|feet|foot|ft\b|miles?\b|mi\b)[^a-z]*(?:back|behind|ahead|forward|ago|away)?"""), "")
+                // Remove location-hint phrases that don't describe the POI
+                .replace(Regex("""\bat the (corner|intersection|crossroads|junction|light|stop|signal)\b"""), "")
+                .replace(Regex("""\bon the (corner|right side|left side)\b"""), "")
+                .replace(Regex("""\bjust passed (it|it on the .+)?\b"""), "")
+                // Strip leading "is [a/an] " — creation syntax like "is a restaurant"
+                .replace(Regex("""^\s*is\s+(a\s+|an\s+)?"""), "")
+                // Strip remaining lone digits (e.g. house numbers already handled)
+                .replace(Regex("""\b\d{1,5}\b"""), "")
+                .replace(Regex("""\s{2,}"""), " ")
                 .trim()
 
-            if (cleanPart.isBlank()) continue
+            if (cleanPart.isBlank()) {
+                Log.d(TAG, "tryLocalParsing: part \"$part\" → cleanPart is blank, skipping")
+                continue
+            }
+            Log.d(TAG, "tryLocalParsing: part \"$part\" → cleanPart \"$cleanPart\"")
 
-            val tags = OSMFeatures.lookupFeature(cleanPart) ?: continue
+            // 1. Try exact/fuzzy feature lookup (handles brands, generic amenity names)
+            val (tags, extractedName) = run {
+                val directTags = OSMFeatures.lookupFeature(cleanPart)
+                if (directTags != null) {
+                    Log.d(TAG, "tryLocalParsing: direct lookup hit: $directTags")
+                    directTags to (directTags["brand"] ?: directTags["name"])
+                } else {
+                    // 2. Try named-business lookup ("Jimmy's pizza" → name + tags)
+                    val namedResult = OSMFeatures.lookupNamedBusiness(cleanPart)
+                    if (namedResult != null) {
+                        Log.d(TAG, "tryLocalParsing: named-business hit: ${namedResult.first} → ${namedResult.second}")
+                        namedResult.second to namedResult.first
+                    } else {
+                        Log.d(TAG, "tryLocalParsing: no match for \"$cleanPart\"")
+                        null to null
+                    }
+                }
+            }
+            if (tags == null) continue
+
             val mutableTags = tags.toMutableMap()
-
-            val brand = tags["brand"]
-            if (brand != null && !mutableTags.containsKey("name")) {
-                mutableTags["name"] = brand
+            // Apply extracted or brand name
+            if (extractedName != null && !mutableTags.containsKey("name")) {
+                mutableTags["name"] = extractedName
             }
 
-            // Only assign an address if it was explicitly named, or if there's no distance phrase
+            // Assign address only when no distance phrase is present
             if (computedDistanceAhead == 0.0 && addressIndex < addresses.size) {
                 mutableTags["addr:housenumber"] = addresses[addressIndex].toString()
                 addressIndex++
             }
             context.currentRoadName?.let { mutableTags["addr:street"] = it }
 
+            val label = mutableTags["name"] ?: mutableTags["brand"]
+                ?: mutableTags["amenity"] ?: mutableTags["shop"] ?: "POI"
             edits.add(VoiceMapperEdit(
                 type = EditType.CREATE_NODE,
-                description = "Add ${tags["brand"] ?: tags["name"] ?: tags["amenity"] ?: tags["shop"] ?: "POI"}",
+                description = "Add $label",
                 tags = mutableTags,
                 relativeSide = effectiveSide ?: RelativeSide.RIGHT,
                 distanceAhead = computedDistanceAhead,
@@ -185,7 +242,7 @@ class VoiceMapperAIProcessor(
             ))
         }
 
-        // Address-only: numbers were found but no POI type matched → create plain address node(s)
+        // Address-only: numbers present but no POI type matched
         if (edits.isEmpty() && addresses.isNotEmpty() && computedDistanceAhead == 0.0) {
             for (number in addresses) {
                 val tags = mutableMapOf("addr:housenumber" to number.toString())
@@ -195,7 +252,6 @@ class VoiceMapperAIProcessor(
                     description = "Add address $number",
                     tags = tags,
                     relativeSide = effectiveSide ?: RelativeSide.RIGHT,
-                    distanceAhead = 0.0,
                     distanceSide = 15.0,
                     confidence = if (side != null) 0.75f else 0.6f
                 ))
@@ -203,12 +259,14 @@ class VoiceMapperAIProcessor(
         }
 
         if (edits.isNotEmpty()) {
+            Log.d(TAG, "tryLocalParsing: success with ${edits.size} edits")
             return VoiceMapperAIResponse(
                 success = true,
                 edits = edits,
                 audioFeedback = "Found ${edits.size} ${if (edits.size == 1) "location" else "locations"} to add"
             )
         }
+        Log.d(TAG, "tryLocalParsing: no edits produced, falling through to AI")
         return null
     }
 
@@ -217,7 +275,7 @@ class VoiceMapperAIProcessor(
      */
     private suspend fun callClaudeAPI(context: VoiceMapperContext): VoiceMapperAIResponse {
         val requestBodyStr = buildJsonObject {
-            put("model", "claude-sonnet-4-20250514")
+            put("model", "claude-sonnet-4-6")
             put("max_tokens", 2000)
             put("system", buildSystemPrompt())
             putJsonArray("messages") {
@@ -230,6 +288,7 @@ class VoiceMapperAIProcessor(
 
         val apiKey = de.westnordost.streetcomplete.Prefs.sharedPreferences
             .getString("anthropic_api_key", "") ?: ""
+        Log.d(TAG, "callClaudeAPI: model=claude-sonnet-4-6 apiKey=${if (apiKey.isBlank()) "MISSING" else "${apiKey.take(8)}…"}")
         val response = httpClient.post(apiEndpoint) {
             headers {
                 append("Content-Type", "application/json")
@@ -271,6 +330,39 @@ DISTANCE/POSITION:
 - "bench 20 meters back" → distanceAhead:-20, side:CENTER (negative=behind user)
 - "on the left, 50m ahead" → side:LEFT, distanceAhead:50
 - Default distanceSide: 15 (meters from road edge)
+- UNIT CONVERSION (always output meters): 1 yard=0.9144m, 1 foot=0.3048m, 1 mile=1609.344m
+
+NAMED BUSINESSES (extract name + type — always include name tag):
+- "Jimmy's pizza on the left" → tags:{"amenity":"restaurant","cuisine":"pizza","name":"Jimmy's Pizza"}, side:LEFT
+- "Bob's burgers ahead" → tags:{"amenity":"fast_food","cuisine":"burger","name":"Bob's Burgers"}, side:CENTER
+- "Smith's Bakery on the right" → tags:{"shop":"bakery","name":"Smith's Bakery"}, side:RIGHT
+- "Li's Chinese restaurant" → tags:{"amenity":"restaurant","cuisine":"chinese","name":"Li's Chinese Restaurant"}
+- "Sal's auto repair" → tags:{"shop":"car_repair","name":"Sal's Auto Repair"}
+- "The Blue Parrot bar" → tags:{"amenity":"bar","name":"The Blue Parrot"}
+- Named + address: "Tony's pizza at 456 on the left" → name:"Tony's Pizza", addr:housenumber:"456", side:LEFT
+
+COMPOUND POSITIONING EXAMPLES:
+- "20 yards back left at the corner is Jimmy's pizza"
+  → side:LEFT, distanceAhead:-18.3, tags:{"amenity":"restaurant","cuisine":"pizza","name":"Jimmy's Pizza"}
+- "100 feet ahead on the right, Shell gas station"
+  → side:RIGHT, distanceAhead:30.5, tags:{"amenity":"fuel","brand":"Shell","brand:wikidata":"Q154950","name":"Shell"}
+- "50 meters back right, there's a bench"
+  → side:RIGHT, distanceAhead:-50, tags:{"amenity":"bench"}
+- "at the corner on the left is a CVS"
+  → side:LEFT, tags:{"shop":"chemist","amenity":"pharmacy","brand":"CVS Pharmacy","brand:wikidata":"Q2078880","name":"CVS Pharmacy"}
+- "just passed a fire hydrant on the left"
+  → side:LEFT, distanceAhead:-5, tags:{"emergency":"fire_hydrant"}
+- "McDonald's and KFC on the right, addresses 123 and 125"
+  → two CREATE_NODE edits, side:RIGHT, addr:housenumber 123 and 125 respectively
+
+INTERSECTION / LOCATION HINTS (use to describe position in explanation, not as separate tags):
+- "at the corner", "at the intersection", "on the corner" → note in explanation that it's at an intersection
+- "next to", "across from" → note in explanation
+
+SENTENCE PATTERNS THAT MEAN CREATION (not modification):
+- "[position] is [business]": "20 yards back left at the corner is Jimmy's pizza" → CREATE_NODE
+- "there's a [business] [position]": "there's a bakery on the left" → CREATE_NODE
+- "[business] [position]": "Starbucks on the right" → CREATE_NODE
 
 COMMON QUEST ANSWERS (MODIFY_TAGS on nearby element):
 Surface: asphalt|concrete|paving_stones|sett|cobblestone|unpaved|gravel|dirt|grass|sand|wood
