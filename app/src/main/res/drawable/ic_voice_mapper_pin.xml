@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Orange teardrop pin with mic icon — shown for pending voice mapper edits on the map.
+     Viewport matches pin.xml (52x66) so rendering is consistent with quest pins. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="52dp"
+    android:height="66dp"
+    android:viewportWidth="52"
+    android:viewportHeight="66">
+
+    <!-- Teardrop shape (orange = pending) -->
+    <path
+        android:pathData="m26,0c-14.359,0 -26,11.641 -26,26 0.006,6.626 2.542,12.999 7.089,17.819l18.911,22.181 20.539,-24.109c3.529,-4.546 5.449,-10.135 5.46,-15.889 0,-14.359 -11.641,-26 -26,-26z"
+        android:fillColor="#FF6F00" />
+
+    <!-- Mic icon: original path is 24x24, scaled ×1.6 and centred at (26, 26) in the
+         pin's circular top area.  Transform: scale(1.6) then translate(6.8, 7.6). -->
+    <group
+        android:scaleX="1.6"
+        android:scaleY="1.6"
+        android:translateX="6.8"
+        android:translateY="7.6">
+        <path
+            android:fillColor="#FFFFFF"
+            android:pathData="M12,14c1.66,0 2.99,-1.34 2.99,-3L15,5c0,-1.66 -1.34,-3 -3,-3S9,3.34 9,5v6c0,1.66 1.34,3 3,3zM17.3,11c0,3 -2.54,5.1 -5.3,5.1S6.7,14 6.7,11H5c0,3.41 2.72,6.23 6,6.72V21h2v-3.28c3.28,-0.48 6,-3.3 6,-6.72h-1.7z" />
+    </group>
+
+</vector>
