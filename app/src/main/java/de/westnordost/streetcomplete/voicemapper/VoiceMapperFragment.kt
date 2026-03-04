@@ -482,7 +482,7 @@ TIPS
     override fun onClickMapAt(position: LatLon, clickAreaSizeInMeters: Double): Boolean = true
 
     override fun onClickClose(onConfirmed: () -> Unit) {
-        onConfirmed()
+        // Voice mode persists through back presses — do not close on back
     }
 
     override fun onDestroyView() {

@@ -7,7 +7,7 @@ import kotlin.time.Duration.Companion.minutes
 object ApplicationConstants {
     const val NAME = "SCEE-AI"
     val USER_AGENT = NAME + " " + BuildConfig.VERSION_NAME
-    const val QUESTTYPE_TAG_KEY = "StreetComplete:quest_type" // use original SC here, so statistics are counted
+    const val QUESTTYPE_TAG_KEY = "SCEE-AI:quest_type"
 
     const val OLD_DATABASE_NAME = "streetcomplete.db"
     const val DATABASE_NAME = "streetcomplete_v2.db"

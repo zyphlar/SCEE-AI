@@ -18,15 +18,8 @@ import org.maplibre.android.offline.OfflineTilePyramidRegionDefinition
 
 class MapTilesDownloaderAndroid(private val context: Context) : MapTilesDownloader {
 
-    init {
-        try {
-            // must be called before getting OfflineManager instance but will throw an exception if
-            // not called from the main thread
-            MapLibre.getInstance(context)
-        } catch (_: Exception) { }
-    }
-
     override suspend fun clear() {
+        withContext(Dispatchers.Main) { MapLibre.getInstance(context) }
         try {
             OfflineManager.getInstance(context).awaitResetDatabase()
         } catch (e: Exception) {
@@ -34,25 +27,28 @@ class MapTilesDownloaderAndroid(private val context: Context) : MapTilesDownload
         }
     }
 
-    override suspend fun download(bbox: BoundingBox) = withContext(Dispatchers.IO) {
-        val bounds = LatLngBounds.fromLatLngs(listOf(bbox.max.toLatLng(), bbox.min.toLatLng()))
-        val pixelRatio = context.resources.displayMetrics.density
-        val regionDefinition = OfflineTilePyramidRegionDefinition(styleUrl, bounds, 0.0, 16.0, pixelRatio)
+    override suspend fun download(bbox: BoundingBox) {
+        withContext(Dispatchers.Main) { MapLibre.getInstance(context) }
+        withContext(Dispatchers.IO) {
+            val bounds = LatLngBounds.fromLatLngs(listOf(bbox.max.toLatLng(), bbox.min.toLatLng()))
+            val pixelRatio = context.resources.displayMetrics.density
+            val regionDefinition = OfflineTilePyramidRegionDefinition(styleUrl, bounds, 0.0, 16.0, pixelRatio)
 
-        // store timestamp as metadata for deleting areas older than
-        // (could also be done directly from the long)
-        val metadata = nowAsEpochMilliseconds().toString().toByteArray(Charsets.UTF_8)
-        try {
-            val offlineRegion = OfflineManager.getInstance(context).awaitCreateOfflineRegion(regionDefinition, metadata)
-            val time = nowAsEpochMilliseconds()
-            val status = offlineRegion.awaitDownload()
-            val seconds = (nowAsEpochMilliseconds() - time) / 1000.0
-            Log.i(TAG, "Downloaded ${status.completedTileCount} tiles (${status.completedTileSize / 1000}kB) in ${seconds.format(1)}s")
-            // note that the numbers include tiles that were already on device
-            //  no idea how to check which tiles were really downloaded (other than in android log for MapLibre)
-            // status.requiredResourceCount and status.completedResourceSize might be interesting too
-        } catch (e: Exception) {
-            Log.w(TAG, e.message.orEmpty(), e)
+            // store timestamp as metadata for deleting areas older than
+            // (could also be done directly from the long)
+            val metadata = nowAsEpochMilliseconds().toString().toByteArray(Charsets.UTF_8)
+            try {
+                val offlineRegion = OfflineManager.getInstance(context).awaitCreateOfflineRegion(regionDefinition, metadata)
+                val time = nowAsEpochMilliseconds()
+                val status = offlineRegion.awaitDownload()
+                val seconds = (nowAsEpochMilliseconds() - time) / 1000.0
+                Log.i(TAG, "Downloaded ${status.completedTileCount} tiles (${status.completedTileSize / 1000}kB) in ${seconds.format(1)}s")
+                // note that the numbers include tiles that were already on device
+                //  no idea how to check which tiles were really downloaded (other than in android log for MapLibre)
+                // status.requiredResourceCount and status.completedResourceSize might be interesting too
+            } catch (e: Exception) {
+                Log.w(TAG, e.message.orEmpty(), e)
+            }
         }
     }
 

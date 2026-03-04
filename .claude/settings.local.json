@@ -18,7 +18,10 @@
       "Bash(/c/Users/Will/AppData/Local/Android/Sdk/platform-tools/adb.exe install:*)",
       "Bash(grep:*)",
       "Bash(\"$ADB\" shell:*)",
-      "Bash(\"$ADB\":*)"
+      "Bash(\"$ADB\":*)",
+      "WebSearch",
+      "WebFetch(domain:docs.codeberg.org)",
+      "WebFetch(domain:codeberg.org)"
     ]
   }
 }

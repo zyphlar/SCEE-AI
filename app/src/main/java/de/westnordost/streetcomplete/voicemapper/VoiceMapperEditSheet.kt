@@ -6,11 +6,14 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.Button
 import android.widget.EditText
+import android.widget.FrameLayout
 import android.widget.ImageButton
 import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.appcompat.app.AlertDialog
 import androidx.core.os.bundleOf
+import com.google.android.material.bottomsheet.BottomSheetBehavior
+import com.google.android.material.bottomsheet.BottomSheetDialog
 import com.google.android.material.bottomsheet.BottomSheetDialogFragment
 import de.westnordost.streetcomplete.R
 import de.westnordost.streetcomplete.data.osm.mapdata.LatLon
@@ -46,6 +49,20 @@ class VoiceMapperEditSheet : BottomSheetDialogFragment() {
         currentEdit = voiceMapperService.pendingEdits.value.find { it.id == editId }
         editedTags.clear()
         currentEdit?.tags?.let { editedTags.putAll(it) }
+    }
+
+    override fun onStart() {
+        super.onStart()
+        val sheet = (dialog as? BottomSheetDialog)
+            ?.findViewById<FrameLayout>(com.google.android.material.R.id.design_bottom_sheet)
+        sheet?.let {
+            val behavior = BottomSheetBehavior.from(it)
+            behavior.state = BottomSheetBehavior.STATE_EXPANDED
+            behavior.skipCollapsed = true
+            // Expand to 85% of screen height so buttons are always visible
+            val screenHeight = resources.displayMetrics.heightPixels
+            behavior.maxHeight = (screenHeight * 0.85).toInt()
+        }
     }
 
     override fun onCreateView(
