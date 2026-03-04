@@ -321,9 +321,16 @@ class VoiceMapperFragment : Fragment(), IsCloseableBottomSheet {
     }
     
     private fun speakFeedback(text: String) {
-        if (ttsReady && viewModel.audioFeedbackEnabled.value) {
-            tts?.speak(text, TextToSpeech.QUEUE_FLUSH, null, "voice_mapper_feedback")
-        }
+        if (!ttsReady || !viewModel.audioFeedbackEnabled.value) return
+        // Pause the recognizer before speaking so TTS audio isn't fed back in
+        voiceMapperService.silenceForTTS()
+        tts?.setOnUtteranceProgressListener(object : android.speech.tts.UtteranceProgressListener() {
+            override fun onStart(utteranceId: String?) {}
+            override fun onDone(utteranceId: String?) { voiceMapperService.resumeFromTTS() }
+            @Deprecated("Deprecated in API 21")
+            override fun onError(utteranceId: String?) { voiceMapperService.resumeFromTTS() }
+        })
+        tts?.speak(text, TextToSpeech.QUEUE_FLUSH, null, "voice_mapper_feedback")
     }
     
     private fun submitTextCommand() {

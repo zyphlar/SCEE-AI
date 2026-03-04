@@ -6,7 +6,15 @@
       "Bash(xargs grep:*)",
       "Bash(./gradlew :app:assembleDebug:*)",
       "Bash(JAVA_HOME=\"/c/Program Files/Eclipse Adoptium/jdk-21.0.1.12-hotspot\" ./gradlew :app:assembleDebug:*)",
-      "Bash(JAVA_HOME=\"/c/Program Files/Eclipse Adoptium/jdk-21.0.1.12-hotspot\" ./gradlew :app:installDebug:*)"
+      "Bash(JAVA_HOME=\"/c/Program Files/Eclipse Adoptium/jdk-21.0.1.12-hotspot\" ./gradlew :app:installDebug:*)",
+      "Bash(JAVA_HOME=\"/c/Program Files/Eclipse Adoptium/jdk-21.0.1.12-hotspot\" ./gradlew :app:compileDebugKotlin:*)",
+      "Bash(JAVA_HOME=\"/c/Program Files/Eclipse Adoptium/jdk-21.0.1.12-hotspot\" ./gradlew :app:compileDebugKotlinAndroid:*)",
+      "Bash(adb devices:*)",
+      "Bash(\"/c/Users/Will/AppData/Local/Android/Sdk/platform-tools/adb.exe\" install:*)",
+      "Bash(JAVA_HOME=\"/c/Program Files/Microsoft/jdk-21.0.6.7-hotspot\" ./gradlew assembleDebug:*)",
+      "Bash(\"$ADB\" install:*)",
+      "Bash(\"$ADB\" logcat:*)",
+      "Bash(\"/c/Users/Will/AppData/Local/Android/Sdk/platform-tools/adb.exe\" logcat:*)"
     ]
   }
 }

@@ -9,6 +9,7 @@ import android.os.Bundle
 import android.speech.RecognitionListener
 import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
+import android.util.Log
 import androidx.core.content.ContextCompat
 import de.westnordost.streetcomplete.data.osm.edits.ElementEditsController
 import de.westnordost.streetcomplete.data.osm.edits.create.CreateNodeAction
@@ -18,7 +19,14 @@ import de.westnordost.streetcomplete.data.osm.edits.update_tags.UpdateElementTag
 import de.westnordost.streetcomplete.data.osm.geometry.ElementGeometry
 import de.westnordost.streetcomplete.data.osm.geometry.ElementPointGeometry
 import de.westnordost.streetcomplete.data.osm.geometry.ElementPolylinesGeometry
-import de.westnordost.streetcomplete.data.osm.mapdata.*
+import de.westnordost.streetcomplete.data.osm.mapdata.Element
+import de.westnordost.streetcomplete.data.osm.mapdata.ElementKey
+import de.westnordost.streetcomplete.data.osm.mapdata.LatLon
+import de.westnordost.streetcomplete.data.osm.mapdata.BoundingBox
+import de.westnordost.streetcomplete.data.osm.mapdata.MapDataController
+import de.westnordost.streetcomplete.data.osm.mapdata.MutableMapDataWithGeometry
+import de.westnordost.streetcomplete.data.osm.mapdata.Node
+import de.westnordost.streetcomplete.data.osm.mapdata.Way
 import de.westnordost.streetcomplete.util.ktx.nowAsEpochMilliseconds
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -55,11 +63,16 @@ class VoiceMapperService(
     
     private var speechRecognizer: SpeechRecognizer? = null
     private val scope = CoroutineScope(Dispatchers.Main + SupervisorJob())
-    
+
+    // Whether the Android SpeechRecognizer is currently active (startListening called, no result/error yet)
+    private var isRecognizerActive = false
+    // Whether TTS is currently speaking — suppresses error-triggered restarts
+    private var isTTSSpeaking = false
+
     // Current location and bearing from GPS
     private var currentLocation: Location? = null
     private var currentBearing: Float = 0f
-    
+
     // State flows for UI
     private val _isListening = MutableStateFlow(false)
     val isListening: StateFlow<Boolean> = _isListening
@@ -69,7 +82,11 @@ class VoiceMapperService(
     
     private val _pendingEdits = MutableStateFlow<List<VoiceMapperEdit>>(emptyList())
     val pendingEdits: StateFlow<List<VoiceMapperEdit>> = _pendingEdits
-    
+
+    /** Edits already submitted to OSM — kept for map-debugging purposes */
+    private val _submittedEdits = MutableStateFlow<List<VoiceMapperEdit>>(emptyList())
+    val submittedEdits: StateFlow<List<VoiceMapperEdit>> = _submittedEdits
+
     private val _events = MutableSharedFlow<VoiceMapperEvent>()
     val events: SharedFlow<VoiceMapperEvent> = _events
     
@@ -103,30 +120,61 @@ class VoiceMapperService(
     }
     
     fun startListening() {
-        if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) 
+        if (isRecognizerActive) {
+            Log.d(TAG, "startListening: already active, ignoring")
+            return
+        }
+        if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO)
             != PackageManager.PERMISSION_GRANTED) {
             scope.launch {
                 _events.emit(VoiceMapperEvent.Error("Microphone permission required"))
             }
             return
         }
-        
-        val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
-            putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
-            putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
-            putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 3)
-            // Enable continuous recognition for driving
-            putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 2000L)
-            putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, 1500L)
-        }
-        
-        speechRecognizer?.startListening(intent)
+        Log.d(TAG, "startListening: starting recognizer")
+        isRecognizerActive = true
         _isListening.value = true
+        speechRecognizer?.startListening(createRecognizerIntent())
     }
-    
+
     fun stopListening() {
-        speechRecognizer?.stopListening()
+        if (isRecognizerActive) speechRecognizer?.stopListening()
+        isRecognizerActive = false
         _isListening.value = false
+    }
+
+    private fun createRecognizerIntent() = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+        putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+        putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
+        putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 3)
+        putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 2000L)
+        putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, 1500L)
+    }
+
+    /** Pause the recognizer while TTS speaks — does not change the user's listening intent. */
+    fun silenceForTTS() {
+        Log.d(TAG, "silenceForTTS: isRecognizerActive=$isRecognizerActive")
+        isTTSSpeaking = true
+        if (isRecognizerActive) {
+            speechRecognizer?.stopListening()
+            isRecognizerActive = false
+        }
+    }
+
+    /** Resume the recognizer after TTS finishes. */
+    fun resumeFromTTS() {
+        Log.d(TAG, "resumeFromTTS: isListening=${_isListening.value}")
+        isTTSSpeaking = false
+        if (_isListening.value) {
+            scope.launch {
+                kotlinx.coroutines.delay(200)
+                if (_isListening.value && !isRecognizerActive) {
+                    Log.d(TAG, "resumeFromTTS: restarting recognizer")
+                    isRecognizerActive = true
+                    speechRecognizer?.startListening(createRecognizerIntent())
+                }
+            }
+        }
     }
     
     fun confirmPendingEdits() {
@@ -161,9 +209,13 @@ class VoiceMapperService(
     fun nodeIdForEdit(edit: VoiceMapperEdit): Long =
         -(edit.id.hashCode().toLong().and(0x7FFFFFFF) + 1L)
 
-    /** Looks up a pending edit by its synthetic node ID */
+    /** Looks up a pending or submitted edit by its synthetic node ID */
     fun getEditByNodeId(nodeId: Long): VoiceMapperEdit? =
         _pendingEdits.value.find { nodeIdForEdit(it) == nodeId }
+            ?: _submittedEdits.value.find { nodeIdForEdit(it) == nodeId }
+
+    fun isSubmittedEdit(nodeId: Long): Boolean =
+        _submittedEdits.value.any { nodeIdForEdit(it) == nodeId }
 
     /** Confirm a single pending edit immediately to OSM without waiting for batch confirmation */
     fun confirmSingleEdit(edit: VoiceMapperEdit) {
@@ -200,28 +252,61 @@ class VoiceMapperService(
         }
         
         override fun onError(error: Int) {
-            _isListening.value = false
+            isRecognizerActive = false
+            Log.d(TAG, "onError: code=$error isTTSSpeaking=$isTTSSpeaking isListening=${_isListening.value}")
+
+            // Handle fatal / special cases synchronously on main thread
+            when (error) {
+                SpeechRecognizer.ERROR_AUDIO,
+                SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS -> {
+                    _isListening.value = false
+                }
+                SpeechRecognizer.ERROR_CLIENT -> {
+                    // Recognizer in bad state — recreate immediately (must be on main thread)
+                    Log.w(TAG, "ERROR_CLIENT: recreating SpeechRecognizer")
+                    speechRecognizer?.destroy()
+                    speechRecognizer = SpeechRecognizer.createSpeechRecognizer(context)
+                    speechRecognizer?.setRecognitionListener(this)
+                }
+            }
+
             val errorMessage = when (error) {
                 SpeechRecognizer.ERROR_AUDIO -> "Audio recording error"
-                SpeechRecognizer.ERROR_CLIENT -> "Client side error"
                 SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS -> "Insufficient permissions"
                 SpeechRecognizer.ERROR_NETWORK -> "Network error"
                 SpeechRecognizer.ERROR_NETWORK_TIMEOUT -> "Network timeout"
-                SpeechRecognizer.ERROR_NO_MATCH -> "No speech match"
-                SpeechRecognizer.ERROR_RECOGNIZER_BUSY -> "Recognition service busy"
+                SpeechRecognizer.ERROR_NO_MATCH -> null        // silent — normal during continuous use
+                SpeechRecognizer.ERROR_RECOGNIZER_BUSY -> null // silent — will auto-retry
                 SpeechRecognizer.ERROR_SERVER -> "Server error"
-                SpeechRecognizer.ERROR_SPEECH_TIMEOUT -> "No speech input"
-                else -> "Unknown error: $error"
+                SpeechRecognizer.ERROR_SPEECH_TIMEOUT -> null  // silent — normal during continuous use
+                SpeechRecognizer.ERROR_CLIENT -> null          // handled above, no toast needed
+                else -> "Unknown recognizer error: $error"
             }
+
+            val shouldRestart = _isListening.value && !isTTSSpeaking
+                && error != SpeechRecognizer.ERROR_AUDIO
+                && error != SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS
+            val delayMs = if (error == SpeechRecognizer.ERROR_RECOGNIZER_BUSY
+                || error == SpeechRecognizer.ERROR_CLIENT) 400L else 100L
+
             scope.launch {
-                _events.emit(VoiceMapperEvent.Error(errorMessage))
+                if (errorMessage != null) _events.emit(VoiceMapperEvent.Error(errorMessage))
+                if (shouldRestart) {
+                    kotlinx.coroutines.delay(delayMs)
+                    if (_isListening.value && !isTTSSpeaking && !isRecognizerActive) {
+                        Log.d(TAG, "onError: restarting after $error")
+                        isRecognizerActive = true
+                        speechRecognizer?.startListening(createRecognizerIntent())
+                    }
+                }
             }
         }
-        
+
         override fun onResults(results: Bundle?) {
+            isRecognizerActive = false
             val matches = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
             val transcription = matches?.firstOrNull() ?: return
-            
+
             _lastTranscription.value = transcription
             processTranscription(transcription)
         }
@@ -274,28 +359,49 @@ class VoiceMapperService(
                 val aiResponse = aiProcessor.processVoiceCommand(context)
 
                 if (aiResponse.success) {
-                    // Compute positions for each edit
-                    val edits = aiResponse.edits.map { edit ->
-                        if (edit.position == null) {
-                            val pos = calculateRelativePosition(
-                                edit.relativeSide ?: RelativeSide.RIGHT,
-                                edit.distanceAhead,
-                                edit.distanceSide
-                            ) ?: LatLon(location.latitude, location.longitude)
-                            edit.copy(position = pos)
-                        } else edit
+                    // Resolve element search criteria and expand applyToAll edits
+                    val resolvedEdits = mutableListOf<VoiceMapperEdit>()
+                    for (edit in aiResponse.edits) {
+                        if ((edit.elementSearchName != null || edit.elementSearchTags.isNotEmpty())
+                            && edit.elementKey == null) {
+                            // Find matching elements in nearby map data
+                            val matches = findElementsBySearch(edit, nearbyData, location)
+                            if (matches.isEmpty()) {
+                                // No match found — keep as pending without elementKey so user can see it
+                                resolvedEdits.add(edit.copy(
+                                    description = edit.description + " (no match found nearby)",
+                                    confidence = minOf(edit.confidence, 0.5f)
+                                ))
+                            } else {
+                                for (match in matches) {
+                                    val matchGeom = nearbyData.getGeometry(match.type, match.id)
+                                    resolvedEdits.add(edit.copy(
+                                        elementKey = ElementKey(match.type, match.id),
+                                        position = matchGeom?.center,
+                                        description = edit.description + " (${match.tags["name"] ?: match.tags["brand"] ?: "${match.type}/${match.id}"})"
+                                    ))
+                                }
+                            }
+                        } else {
+                            // Compute position for CREATE_NODE edits without explicit position
+                            val withPosition = if (edit.position == null && edit.type == EditType.CREATE_NODE) {
+                                val pos = calculateRelativePosition(
+                                    edit.relativeSide ?: RelativeSide.RIGHT,
+                                    edit.distanceAhead,
+                                    edit.distanceSide
+                                ) ?: LatLon(location.latitude, location.longitude)
+                                edit.copy(position = pos)
+                            } else edit
+                            resolvedEdits.add(withPosition)
+                        }
                     }
 
-                    if (autoConfirmEdits && edits.all { it.confidence >= 0.9f }) {
-                        // High confidence edits can be auto-confirmed
-                        for (edit in edits) {
-                            applyEdit(edit)
-                        }
-                        _events.emit(VoiceMapperEvent.EditsApplied(edits.size))
+                    if (autoConfirmEdits && resolvedEdits.all { it.confidence >= 0.9f }) {
+                        for (edit in resolvedEdits) { applyEdit(edit) }
+                        _events.emit(VoiceMapperEvent.EditsApplied(resolvedEdits.size))
                     } else {
-                        // Add to pending for user confirmation
-                        _pendingEdits.value = _pendingEdits.value + edits
-                        _events.emit(VoiceMapperEvent.EditsPending(edits))
+                        _pendingEdits.value = _pendingEdits.value + resolvedEdits
+                        _events.emit(VoiceMapperEvent.EditsPending(resolvedEdits))
                     }
                 } else {
                     _events.emit(VoiceMapperEvent.Error(aiResponse.errorMessage ?: "Failed to process command"))
@@ -334,7 +440,70 @@ class VoiceMapperService(
         }
     }
     
+    /**
+     * Find nearby OSM elements matching the edit's search criteria.
+     * Returns a list: single best match normally, or all matches when applyToAll=true.
+     */
+    private fun findElementsBySearch(
+        edit: VoiceMapperEdit,
+        nearbyData: MutableMapDataWithGeometry,
+        location: Location
+    ): List<Element> {
+        val lat = location.latitude
+        val lon = location.longitude
+        var candidates: List<Element> = nearbyData.toList()
+            .filter { it.tags.isNotEmpty() }
+
+        // Filter by required tags
+        if (edit.elementSearchTags.isNotEmpty()) {
+            candidates = candidates.filter { element ->
+                edit.elementSearchTags.all { (k, v) -> element.tags[k] == v }
+            }
+        }
+
+        // Filter by name (fuzzy)
+        if (edit.elementSearchName != null) {
+            val search = edit.elementSearchName.lowercase().trim()
+            candidates = candidates.filter { element ->
+                val name = element.tags["name"]?.lowercase() ?: ""
+                val brand = element.tags["brand"]?.lowercase() ?: ""
+                name.contains(search) || brand.contains(search) ||
+                    search.contains(name.takeIf { it.length > 3 } ?: return@filter false) ||
+                    search.contains(brand.takeIf { it.length > 3 } ?: "NOMATCH")
+            }
+        }
+
+        if (candidates.isEmpty()) return emptyList()
+
+        // Sort by distance and optionally by side direction
+        candidates = candidates.sortedBy { element ->
+            val center = nearbyData.getGeometry(element.type, element.id)?.center
+                ?: (element as? Node)?.position ?: return@sortedBy Double.MAX_VALUE
+            var dist = distanceBetween(lat, lon, center.latitude, center.longitude)
+            // Penalize elements on the wrong side if a side is specified
+            if (edit.relativeSide != null) {
+                val bearing = currentBearing.toDouble()
+                val elementBearing = Math.toDegrees(
+                    kotlin.math.atan2(
+                        center.longitude - lon,
+                        center.latitude - lat
+                    )
+                )
+                val relAngle = ((elementBearing - bearing + 540) % 360) - 180
+                val isLeft = relAngle < 0
+                val isRight = relAngle > 0
+                val wrongSide = (edit.relativeSide == RelativeSide.LEFT && isRight) ||
+                    (edit.relativeSide == RelativeSide.RIGHT && isLeft)
+                if (wrongSide) dist += 500.0 // strong distance penalty for wrong side
+            }
+            dist
+        }
+
+        return if (edit.applyToAll) candidates else candidates.take(1)
+    }
+
     private suspend fun applyEdit(edit: VoiceMapperEdit) {
+        _submittedEdits.value = _submittedEdits.value + edit
         when (edit.type) {
             EditType.CREATE_NODE -> {
                 createNode(edit)
@@ -488,6 +657,7 @@ class VoiceMapperService(
     }
     
     companion object {
+        private const val TAG = "VoiceMapperService"
         private val ROAD_TYPES = setOf(
             "motorway", "trunk", "primary", "secondary", "tertiary",
             "unclassified", "residential", "service", "living_street",

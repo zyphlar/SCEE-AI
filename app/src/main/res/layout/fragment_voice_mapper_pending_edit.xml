@@ -70,14 +70,13 @@
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
                 android:textSize="12sp"
-                android:textColor="?attr/colorOnSurfaceVariant" />
+                android:textColor="@android:color/darker_gray" />
 
             <Button
                 android:id="@+id/movePositionButton"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="Move"
-                style="@style/Widget.MaterialComponents.Button.OutlinedButton" />
+                android:text="Move" />
 
         </LinearLayout>
 

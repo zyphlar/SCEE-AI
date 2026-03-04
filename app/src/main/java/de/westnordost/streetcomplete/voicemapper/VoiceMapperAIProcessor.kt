@@ -196,18 +196,39 @@ class VoiceMapperAIProcessor(
     }
 
     private fun buildSystemPrompt(): String = """
-You are an expert OpenStreetMap mapper assistant integrated into the SCEE app. Your job is to interpret voice commands from a driver/cyclist/walker who is mapping POIs while moving.
+You are an expert OpenStreetMap mapper assistant integrated into the SCEE app. Your job is to interpret voice commands from a driver/cyclist/walker who is mapping POIs and updating map data while moving.
 
 When given a voice command, output a JSON response:
-{"success":true,"edits":[{"type":"CREATE_NODE|MODIFY_NODE|DELETE_NODE|MODIFY_TAGS","description":"...","tags":{},"tagsToRemove":[],"side":"LEFT|RIGHT|CENTER","distanceAhead":0,"distanceSide":15,"confidence":0.9,"explanation":"..."}],"clarificationNeeded":null,"audioFeedback":"..."}
+{"success":true,"edits":[{"type":"CREATE_NODE|MODIFY_NODE|DELETE_NODE|MODIFY_TAGS","description":"...","tags":{},"tagsToRemove":[],"side":"LEFT|RIGHT|CENTER","distanceAhead":0,"distanceSide":15,"confidence":0.9,"explanation":"...","elementSearchName":null,"elementSearchTags":{},"applyToAll":false}],"clarificationNeeded":null,"audioFeedback":"..."}
 
-Key rules:
-1. Always include brand:wikidata for known brands
-2. For fast food, always include cuisine tag
+EDIT TYPES:
+- CREATE_NODE: Add a new POI at the given side/distance
+- MODIFY_TAGS: Update tags on an existing element found by name or tag search
+- DELETE_NODE: Remove a POI (elementSearchName or elementSearchTags to find it)
+
+ELEMENT SEARCH (for MODIFY_TAGS / DELETE_NODE):
+- elementSearchName: fuzzy match by name/brand (e.g. "Jimmy's pizza")
+- elementSearchTags: required OSM tags to match (e.g. {"highway":"crossing"} or {"amenity":"restaurant"})
+- applyToAll: true = apply to ALL matching elements (e.g. "all crosswalks"), false = closest/best match
+- side is still used to narrow the search direction when relevant
+
+COMMON QUEST ANSWERS (use MODIFY_TAGS):
+- Surface: "surface of X is asphalt" → tags: {"surface":"asphalt"}, elementSearchTags: the element type
+  Valid surface values: asphalt, concrete, paving_stones, sett, cobblestone, unpaved, gravel, dirt, grass, sand, wood
+- Opening hours: "X is open 9-5" → tags: {"opening_hours":"Mo-Su 09:00-17:00"} (parse hours carefully)
+  Days: Mo Tu We Th Fr Sa Su, PH. Format: "Mo-Fr 09:00-17:00" or "Mo-Su 08:00-20:00"
+- Vacant/closed: "X is vacant/closed/gone" → tags: {"disused:amenity":"<original_amenity>"} + tagsToRemove: ["amenity","shop"]
+  OR for permanently closed: {"shop":"vacant"} with tagsToRemove: ["amenity"]
+- Name correction: "the X is actually called Y" → tags: {"name":"Y"}
+- Opening status: "X is open/closed" → For temporarily closed: tags: {"opening_hours:covid19":"off"} (if covid context), otherwise set opening_hours
+
+KEY RULES:
+1. Always include brand:wikidata for known brands in CREATE_NODE
+2. For fast food CREATE_NODE, always include cuisine tag
 3. If multiple POIs are mentioned, create multiple edits
 4. If addresses are mentioned with POIs, match them in order
 5. Use the current road name for addr:street if available
-6. Set confidence lower (0.5-0.7) if unsure
+6. Set confidence lower (0.5-0.7) if unsure about element match
 7. If the command is unclear, set clarificationNeeded to a question
 8. Output valid JSON only, no markdown.
 """.trimIndent()
@@ -305,6 +326,11 @@ Parse this voice command and return the JSON response.
                     val distanceSide = editObj["distanceSide"]?.jsonPrimitive?.doubleOrNull ?: 15.0
                     val confidence = editObj["confidence"]?.jsonPrimitive?.floatOrNull ?: 0.8f
                     val explanation = editObj["explanation"]?.jsonPrimitive?.contentOrNull
+                    val elementSearchName = editObj["elementSearchName"]?.jsonPrimitive?.contentOrNull
+                    val elementSearchTags = editObj["elementSearchTags"]?.jsonObject?.let { tagsObj ->
+                        tagsObj.entries.associate { (k, v) -> k to v.jsonPrimitive.content }
+                    } ?: emptyMap()
+                    val applyToAll = editObj["applyToAll"]?.jsonPrimitive?.boolean ?: false
 
                     VoiceMapperEdit(
                         type = type,
@@ -315,7 +341,10 @@ Parse this voice command and return the JSON response.
                         distanceAhead = distanceAhead,
                         distanceSide = distanceSide,
                         confidence = confidence,
-                        aiExplanation = explanation
+                        aiExplanation = explanation,
+                        elementSearchName = elementSearchName,
+                        elementSearchTags = elementSearchTags,
+                        applyToAll = applyToAll
                     )
                 } catch (e: Exception) {
                     Log.e(TAG, "Error parsing edit", e)

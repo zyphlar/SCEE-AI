@@ -173,12 +173,12 @@ class StyleableOverlayMapComponent(
     val labelLayers = listOf(
         SymbolLayer("overlay-symbols", SOURCE)
             .withFilter(all(
-                gte(zoom(), 17f),
+                gte(zoom(), MIN_ZOOM.toFloat()),
                 isPoint()
             ))
             .withProperties(
                 iconImage(get("icon")),
-                iconSize(interpolate(linear(), zoom(), stop(17, 0.5f), stop(19, 1f))),
+                iconSize(interpolate(linear(), zoom(), stop(MIN_ZOOM, 0.5f), stop(19, 1f))),
                 textField(get("label")),
                 textFont(arrayOf("Roboto Regular")),
                 textAnchor(Property.TEXT_ANCHOR_TOP),

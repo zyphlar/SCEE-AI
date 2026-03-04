@@ -20,7 +20,11 @@ data class VoiceMapperEdit(
     val relativeSide: RelativeSide? = null,
     val distanceAhead: Double = 0.0,
     val distanceSide: Double = 10.0,
-    val aiExplanation: String? = null
+    val aiExplanation: String? = null,
+    // For modifying existing elements: search nearby map data to find the target
+    val elementSearchName: String? = null,        // find by name/brand (fuzzy)
+    val elementSearchTags: Map<String, String> = emptyMap(), // find by required tags (e.g. highway=crossing)
+    val applyToAll: Boolean = false               // if true, apply to ALL matching elements
 )
 
 enum class EditType {

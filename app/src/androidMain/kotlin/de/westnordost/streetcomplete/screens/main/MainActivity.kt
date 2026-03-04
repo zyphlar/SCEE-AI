@@ -245,6 +245,9 @@ class MainActivity :
     private var wasFollowingPosition: Boolean? = null
     private var wasNavigationMode: Boolean? = null
 
+    // Tracks whether VoiceMapperFragment should reappear after a displacing bottom sheet is closed
+    private var pendingVoiceMapperReopen = false
+
     private val mapFragment: MainMapFragment? get() =
         supportFragmentManager.findFragmentById(R.id.mapFragment) as MainMapFragment?
 
@@ -382,10 +385,14 @@ class MainActivity :
             if (overlay is de.westnordost.streetcomplete.voicemapper.VoiceMapperOverlay) {
                 onClickVoiceMapper()
             } else if (bottomSheetFragment is VoiceMapperFragment) {
+                pendingVoiceMapperReopen = false  // user switched overlays — don't reopen
                 closeBottomSheet()
             }
         }
         observe(voiceMapperService.pendingEdits) {
+            mapFragment?.refreshOverlay()
+        }
+        observe(voiceMapperService.submittedEdits) {
             mapFragment?.refreshOverlay()
         }
     }
@@ -836,6 +843,8 @@ class MainActivity :
 
     private fun onClickVoiceMapper() {
         showInBottomSheet(VoiceMapperFragment.newInstance())
+        // VoiceMapper is a HUD that runs while the user moves — keep the map following position
+        unfreezeMap()
     }
 
     //endregion
@@ -1123,6 +1132,14 @@ class MainActivity :
         unfreezeMap()
         mapFragment?.endFocus()
         sheetBackPressedCallback.isEnabled = false
+        // Reopen VoiceMapper if it was displaced by this bottom sheet
+        if (pendingVoiceMapperReopen && viewModel.selectedOverlay.value is de.westnordost.streetcomplete.voicemapper.VoiceMapperOverlay) {
+            pendingVoiceMapperReopen = false
+            supportFragmentManager.executePendingTransactions()
+            onClickVoiceMapper()
+        } else {
+            pendingVoiceMapperReopen = false
+        }
     }
 
     /** Open or replace the bottom sheet. If the bottom sheet is replaces, no appear animation is
@@ -1132,6 +1149,11 @@ class MainActivity :
         viewModel.showingBottomSheet.value = true
         freezeMap()
         if (bottomSheetFragment != null) {
+            // If VoiceMapper is being displaced by another fragment, plan to reopen it later
+            if (bottomSheetFragment is VoiceMapperFragment && f !is VoiceMapperFragment
+                && viewModel.selectedOverlay.value is de.westnordost.streetcomplete.voicemapper.VoiceMapperOverlay) {
+                pendingVoiceMapperReopen = true
+            }
             if (clearPreviousHighlighting) clearHighlighting()
             supportFragmentManager.popBackStack(BOTTOM_SHEET, FragmentManager.POP_BACK_STACK_INCLUSIVE)
         }
@@ -1207,6 +1229,12 @@ class MainActivity :
         // Handle VoiceMapper pending-edit pins (synthetic negative-ID nodes)
         if (overlay is de.westnordost.streetcomplete.voicemapper.VoiceMapperOverlay && elementKey.id < 0) {
             val edit = voiceMapperService.getEditByNodeId(elementKey.id) ?: return
+            // Submitted edits are read-only — just show a toast
+            if (voiceMapperService.isSubmittedEdit(elementKey.id)) {
+                val label = edit.tags["name"] ?: edit.tags["amenity"] ?: edit.tags["shop"] ?: edit.description
+                android.widget.Toast.makeText(this, "Submitted: $label", android.widget.Toast.LENGTH_SHORT).show()
+                return
+            }
             val position = edit.position ?: return
             val geometry = de.westnordost.streetcomplete.data.osm.geometry.ElementPointGeometry(position)
             val f = de.westnordost.streetcomplete.voicemapper.VoiceMapperPendingEditForm.newInstance(edit.id)
