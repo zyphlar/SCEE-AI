@@ -5,7 +5,9 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: codeberg-medium
+    container:
+      image: codeberg.org/comaps/docker-android-sdk:ubuntu-standalone-sha-8667ed0
 
     steps:
       - uses: actions/checkout@v4
@@ -15,30 +17,6 @@ jobs:
           java-version: '21'
           distribution: 'temurin'
           cache: gradle
-
-      - name: Cache Android SDK
-        id: sdk-cache
-        uses: actions/cache@v4
-        with:
-          path: /opt/android-sdk
-          key: android-sdk-36-buildtools-35.0.0
-
-      - name: Install Android SDK
-        if: steps.sdk-cache.outputs.cache-hit != 'true'
-        run: |
-          mkdir -p /opt/android-sdk/cmdline-tools
-          wget -q https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip \
-            -O /tmp/cmdline-tools.zip
-          unzip -q /tmp/cmdline-tools.zip -d /tmp/sdk-setup
-          mv /tmp/sdk-setup/cmdline-tools /opt/android-sdk/cmdline-tools/latest
-          yes | /opt/android-sdk/cmdline-tools/latest/bin/sdkmanager --licenses >/dev/null
-          /opt/android-sdk/cmdline-tools/latest/bin/sdkmanager \
-            "platform-tools" \
-            "platforms;android-36" \
-            "build-tools;35.0.0"
-
-      - name: Set ANDROID_SDK_ROOT
-        run: echo "ANDROID_SDK_ROOT=/opt/android-sdk" >> $GITHUB_ENV
 
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
