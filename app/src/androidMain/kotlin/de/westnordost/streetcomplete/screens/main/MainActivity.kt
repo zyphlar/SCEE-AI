@@ -821,7 +821,13 @@ class MainActivity :
         questAutoSyncer.startPositionTracking()
 
         mapFragment?.centerCurrentPositionIfFollowing()
-        locationManager.getCurrentLocation()
+        // Use requestUpdates (not just the one-shot getCurrentLocation) so that
+        // voiceMapperService.updateLocation keeps receiving live GPS fixes while driving.
+        locationManager.requestUpdates(
+            prefs.getInt(Prefs.GPS_INTERVAL, 0) * 1000L,
+            prefs.getInt(Prefs.NETWORK_INTERVAL, 5) * 1000L,
+            minDistance = 1f
+        )
     }
 
     private fun onLocationIsDisabled() {

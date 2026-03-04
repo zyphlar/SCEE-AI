@@ -72,9 +72,15 @@ class VoiceMapperService(
     // Whether TTS is currently speaking — suppresses error-triggered restarts
     private var isTTSSpeaking = false
 
-    // Current location and bearing from GPS
+    // Current location and bearing from GPS (updated continuously)
     private var currentLocation: Location? = null
     private var currentBearing: Float = 0f
+
+    // Snapshot captured at the moment the user begins speaking.
+    // Using speech-start position ensures nodes are placed where the user SAW the POI,
+    // not where they ended up after the 1-3 second AI round-trip.
+    private var speechStartLocation: Location? = null
+    private var speechStartBearing: Float = 0f
 
     // State flows for UI
     private val _isListening = MutableStateFlow(false)
@@ -266,6 +272,11 @@ class VoiceMapperService(
         }
         
         override fun onBeginningOfSpeech() {
+            // Snapshot position at the moment the user starts speaking.
+            // All node placements for this utterance will use this location,
+            // regardless of how long AI processing takes afterward.
+            speechStartLocation = currentLocation
+            speechStartBearing = currentBearing
             scope.launch {
                 _events.emit(VoiceMapperEvent.SpeechStarted)
             }
@@ -362,22 +373,26 @@ class VoiceMapperService(
     }
 
     private fun processTranscription(transcription: String, useDummyLocationIfNeeded: Boolean = false) {
-        val location = currentLocation ?: if (useDummyLocationIfNeeded) {
+        // Use speech-start snapshot when available (voice path); fall back to current (text command path)
+        val location = speechStartLocation ?: currentLocation ?: if (useDummyLocationIfNeeded) {
             android.location.Location("dummy").also { it.latitude = 0.0; it.longitude = 0.0 }
         } else {
             scope.launch { _events.emit(VoiceMapperEvent.Error("No GPS location available")) }
             return
         }
-        
+        val bearing = if (speechStartLocation != null) speechStartBearing else currentBearing
+        // Clear the snapshot so a stale one isn't reused by the next command
+        speechStartLocation = null
+
         scope.launch {
             _events.emit(VoiceMapperEvent.ProcessingStarted(transcription))
-            
+
             try {
                 // Get nearby map data for context — expand radius if a large distance is mentioned
                 val mentionedDistance = extractMaxMentionedDistance(transcription)
                 val nearbyData = getNearbyMapData(location, mentionedDistance)
                 val currentRoad = findCurrentRoad(location, nearbyData)
-                
+
                 // Sort nearby elements by distance, closest first, for best AI context
                 val sortedNearby = nearbyData.toList()
                     .filter { it.tags.isNotEmpty() }
@@ -394,7 +409,7 @@ class VoiceMapperService(
                     transcription = transcription,
                     latitude = location.latitude,
                     longitude = location.longitude,
-                    bearing = currentBearing,
+                    bearing = bearing,
                     speed = location.speed,
                     currentRoadName = currentRoad?.tags?.get("name"),
                     currentRoadRef = currentRoad?.tags?.get("ref"),
@@ -416,9 +431,9 @@ class VoiceMapperService(
                             }
                             edit.elementSearchName != null || edit.elementSearchTags.isNotEmpty() -> {
                                 // Use distanceAhead/side to compute a reference search position when set
-                                val searchCenter = computeSearchCenter(edit)
+                                val searchCenter = computeSearchCenter(edit, location, bearing)
                                     ?: LatLon(location.latitude, location.longitude)
-                                val matches = findElementsBySearch(edit, nearbyData, searchCenter)
+                                val matches = findElementsBySearch(edit, nearbyData, searchCenter, location, bearing)
                                 if (matches.isEmpty()) {
                                     resolvedEdits.add(edit.copy(
                                         description = edit.description + " (no match found nearby)",
@@ -441,8 +456,10 @@ class VoiceMapperService(
                                     val pos = calculateRelativePosition(
                                         edit.relativeSide ?: RelativeSide.RIGHT,
                                         edit.distanceAhead,
-                                        edit.distanceSide
-                                    ) ?: LatLon(location.latitude, location.longitude)
+                                        edit.distanceSide,
+                                        location,
+                                        bearing
+                                    )
                                     edit.copy(position = pos)
                                 } else edit
                                 resolvedEdits.add(withPosition)
@@ -535,7 +552,7 @@ class VoiceMapperService(
      * Compute a geographic reference position from an edit's distanceAhead/side.
      * Returns null if no meaningful offset is specified.
      */
-    private fun computeSearchCenter(edit: VoiceMapperEdit): LatLon? {
+    private fun computeSearchCenter(edit: VoiceMapperEdit, location: Location, bearing: Float): LatLon? {
         val side = edit.relativeSide ?: RelativeSide.CENTER
         val hasAhead = edit.distanceAhead != 0.0
         // Only treat distanceSide as meaningful if it's larger than the default 15m
@@ -544,7 +561,9 @@ class VoiceMapperService(
         return calculateRelativePosition(
             side,
             edit.distanceAhead,
-            if (hasSide) edit.distanceSide else 0.0
+            if (hasSide) edit.distanceSide else 0.0,
+            location,
+            bearing
         )
     }
 
@@ -557,7 +576,9 @@ class VoiceMapperService(
     private fun findElementsBySearch(
         edit: VoiceMapperEdit,
         nearbyData: MutableMapDataWithGeometry,
-        searchCenter: LatLon
+        searchCenter: LatLon,
+        userLocation: Location,
+        bearing: Float
     ): List<Element> {
         val lat = searchCenter.latitude
         val lon = searchCenter.longitude
@@ -588,8 +609,8 @@ class VoiceMapperService(
         if (candidates.isEmpty()) return emptyList()
 
         // User position for bearing-based side penalty (independent of search center)
-        val userLat = currentLocation?.latitude ?: lat
-        val userLon = currentLocation?.longitude ?: lon
+        val userLat = userLocation.latitude
+        val userLon = userLocation.longitude
 
         // Sort by distance to searchCenter; apply side/direction penalty relative to user bearing
         candidates = candidates.sortedBy { element ->
@@ -597,7 +618,7 @@ class VoiceMapperService(
                 ?: (element as? Node)?.position ?: return@sortedBy Double.MAX_VALUE
             var dist = distanceBetween(lat, lon, center.latitude, center.longitude)
 
-            val bearing = currentBearing.toDouble()
+            val bearing = bearing.toDouble()
             val elementBearing = Math.toDegrees(
                 kotlin.math.atan2(
                     center.longitude - userLon,
@@ -720,26 +741,26 @@ class VoiceMapperService(
     }
     
     /**
-     * Calculate position relative to current location and bearing
-     * @param side LEFT or RIGHT relative to direction of travel
-     * @param distance Distance in meters (positive = ahead, negative = behind)
+     * Calculate position relative to a given location and bearing.
+     * Call sites pass the speech-start snapshot so the result reflects where the user
+     * was when they spoke, not where they are after AI processing completes.
      */
     fun calculateRelativePosition(
         side: RelativeSide,
         distanceAhead: Double = 0.0,
-        distanceSide: Double = 10.0
-    ): LatLon? {
-        val location = currentLocation ?: return null
-        
+        distanceSide: Double = 10.0,
+        location: Location,
+        bearing: Float
+    ): LatLon {
         // Adjust bearing for side offset
         val sideAngle = when (side) {
-            RelativeSide.LEFT -> currentBearing - 90
-            RelativeSide.RIGHT -> currentBearing + 90
-            RelativeSide.CENTER -> currentBearing
+            RelativeSide.LEFT -> bearing - 90
+            RelativeSide.RIGHT -> bearing + 90
+            RelativeSide.CENTER -> bearing
         }
-        
+
         // Convert to radians
-        val bearingRad = Math.toRadians(currentBearing.toDouble())
+        val bearingRad = Math.toRadians(bearing.toDouble())
         val sideAngleRad = Math.toRadians(sideAngle.toDouble())
         
         // Calculate offset position

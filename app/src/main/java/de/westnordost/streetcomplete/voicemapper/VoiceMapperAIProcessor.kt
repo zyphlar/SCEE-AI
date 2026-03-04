@@ -88,7 +88,9 @@ class VoiceMapperAIProcessor(
                 !transcription.contains(" is on the ") &&
                 !transcription.contains(" is to the ")) ||
             // Surface/road-property keywords → always a modification, never a creation
-            SURFACE_KEYWORDS.any { transcription.contains(it) }
+            SURFACE_KEYWORDS.any { transcription.contains(it) } ||
+            // Speed limit keywords → always a modification on an existing road element
+            SPEED_KEYWORDS.any { transcription.contains(it) }
         if (isModification) {
             Log.d(TAG, "tryLocalParsing: deferring to AI (modification pattern detected)")
             return null
@@ -732,6 +734,11 @@ Respond with a single raw JSON object only. Do not write any text before or afte
         private val SURFACE_KEYWORDS = setOf(
             "cobblestone", "asphalt", "tarmac", "concrete", "paving_stones", "paving stones",
             "unpaved", "gravel", "dirt", "grass", "sand", "sett", "compacted", "fine_gravel"
+        )
+        // Speed limit phrases → always modify an existing road, never create a new node
+        private val SPEED_KEYWORDS = setOf(
+            "speed limit", "max speed", "maxspeed", "speed zone",
+            " mph", " km/h", " kmh", " kph"
         )
     }
 }
