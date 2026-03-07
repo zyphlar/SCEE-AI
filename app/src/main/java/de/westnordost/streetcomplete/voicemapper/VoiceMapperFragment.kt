@@ -9,7 +9,9 @@ import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.view.inputmethod.EditorInfo
+import android.widget.EditText
 import android.widget.Toast
+import androidx.appcompat.app.AlertDialog
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.activity.result.contract.ActivityResultContracts
@@ -125,6 +127,11 @@ class VoiceMapperFragment : Fragment(), IsCloseableBottomSheet, IsMapOrientation
         // Confirm all button
         binding.confirmAllButton.setOnClickListener {
             viewModel.confirmAllEdits()
+        }
+
+        // Export button
+        binding.exportEditsButton.setOnClickListener {
+            showExportDialog()
         }
 
         // Cancel all button
@@ -431,6 +438,52 @@ class VoiceMapperFragment : Fragment(), IsCloseableBottomSheet, IsMapOrientation
         VoiceMapperEditSheet.newInstance(edit.id).show(childFragmentManager, "edit_sheet")
     }
     
+    private fun showExportDialog() {
+        val edits = viewModel.pendingEdits.value
+        if (edits.isEmpty()) {
+            Toast.makeText(requireContext(), "No pending edits to export", Toast.LENGTH_SHORT).show()
+            return
+        }
+        AlertDialog.Builder(requireContext())
+            .setTitle("Export ${edits.size} pending edit${if (edits.size == 1) "" else "s"}")
+            .setItems(arrayOf("Share as .osm file", "Send to JOSM", "Open iD in browser")) { _, which ->
+                when (which) {
+                    0 -> VoiceMapperExporter.shareAsOsmFile(requireContext(), edits)
+                    1 -> showJosmDialog(edits)
+                    2 -> VoiceMapperExporter.openInId(requireContext(), edits)
+                }
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    private fun showJosmDialog(edits: List<VoiceMapperEdit>) {
+        val input = EditText(requireContext()).apply {
+            setText("localhost:8111")
+            hint = "host:port"
+            setSingleLine()
+        }
+        AlertDialog.Builder(requireContext())
+            .setTitle("Send to JOSM")
+            .setMessage("JOSM must be open with Remote Control enabled\n(Edit → Preferences → Remote Control)")
+            .setView(input)
+            .setPositiveButton("Send") { _, _ ->
+                val raw = input.text.toString().trim()
+                val host = raw.substringBefore(":").ifBlank { "localhost" }
+                val port = raw.substringAfter(":", "8111").toIntOrNull() ?: 8111
+                viewLifecycleOwner.lifecycleScope.launch {
+                    val result = VoiceMapperExporter.sendToJosm(edits, host, port)
+                    val msg = if (result.isSuccess)
+                        "Sent ${edits.size} edit${if (edits.size == 1) "" else "s"} to JOSM"
+                    else
+                        "JOSM error: ${result.exceptionOrNull()?.message}"
+                    Toast.makeText(requireContext(), msg, Toast.LENGTH_LONG).show()
+                }
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
     private fun showSettingsDialog() {
         VoiceMapperSettingsDialogFragment().show(
             childFragmentManager,
