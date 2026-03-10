@@ -61,7 +61,9 @@ jobs:
         run: chmod +x gradlew
 
       - name: Build debug APK
-        run: ./gradlew assembleDebug
+        env:
+          GRADLE_OPTS: "-Xmx2g -XX:MaxMetaspaceSize=512m -Dfile.encoding=UTF-8"
+        run: ./gradlew assembleDebug --no-daemon -Pkotlin.daemon.jvm.options="-Xmx1500m"
 
       - name: Create release and upload APK
         env:
