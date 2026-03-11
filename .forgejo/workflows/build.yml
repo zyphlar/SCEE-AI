@@ -49,8 +49,10 @@ jobs:
 
       - name: Build debug APK
         env:
-          GRADLE_OPTS: "-Xmx2g -XX:MaxMetaspaceSize=512m -Dfile.encoding=UTF-8"
-        run: ./gradlew assembleDebug --no-daemon -Pkotlin.daemon.jvm.options="-Xmx1500m"
+          GRADLE_OPTS: "-Xmx2500m -XX:MaxMetaspaceSize=512m -Dfile.encoding=UTF-8"
+        run: |
+          printf '\nkotlin.compiler.execution.strategy=in-process\n' >> gradle.properties
+          ./gradlew assembleDebug --no-daemon
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
