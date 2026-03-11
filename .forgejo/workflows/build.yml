@@ -48,10 +48,9 @@ jobs:
         run: chmod +x gradlew
 
       - name: Build debug APK
-        env:
-          GRADLE_OPTS: "-Xmx2500m -XX:MaxMetaspaceSize=512m -Dfile.encoding=UTF-8"
         run: |
-          printf '\nkotlin.compiler.execution.strategy=in-process\n' >> gradle.properties
+          mkdir -p ~/.gradle
+          printf 'org.gradle.jvmargs=-Xmx2g -XX:MaxMetaspaceSize=512m -Dfile.encoding=UTF-8\nkotlin.compiler.execution.strategy=in-process\n' > ~/.gradle/gradle.properties
           ./gradlew assembleDebug --no-daemon
 
       - name: Upload APK
