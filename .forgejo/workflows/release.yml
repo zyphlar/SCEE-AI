@@ -20,6 +20,7 @@ permissions:
 jobs:
   release:
     runs-on: codeberg-medium
+    timeout-minutes: 60
 
     steps:
       - uses: actions/checkout@v4
@@ -62,8 +63,9 @@ jobs:
 
       - name: Build debug APK
         run: |
-          mkdir -p ~/.gradle
-          printf 'org.gradle.jvmargs=-Xmx2g -XX:MaxMetaspaceSize=512m -Dfile.encoding=UTF-8\nkotlin.compiler.execution.strategy=in-process\n' > ~/.gradle/gradle.properties
+          sed -i 's/^org\.gradle\.jvmargs=.*/org.gradle.jvmargs=-Xmx2g -XX:MaxMetaspaceSize=512m -Dfile.encoding=UTF-8/' gradle.properties
+          sed -i 's/^kotlin\.daemon\.jvmargs=.*/kotlin.daemon.jvmargs=-Xmx1500m/' gradle.properties
+          printf '\nkotlin.compiler.execution.strategy=in-process\n' >> gradle.properties
           ./gradlew assembleDebug --no-daemon
 
       - name: Create release and upload APK
