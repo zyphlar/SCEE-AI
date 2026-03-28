@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import androidx.core.content.FileProvider
+import de.westnordost.streetcomplete.R
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -52,7 +53,7 @@ object VoiceMapperExporter {
         file.writeText(xml, Charsets.UTF_8)
         val uri = FileProvider.getUriForFile(
             context,
-            "${context.packageName}.fileprovider",
+            context.getString(R.string.fileprovider_authority),
             file
         )
         val intent = Intent(Intent.ACTION_SEND).apply {
