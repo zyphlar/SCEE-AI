@@ -46,16 +46,21 @@ object VoiceMapperExporter {
         return sb.toString()
     }
 
-    /** Writes a .osm file to the cache dir and opens the Android share sheet. */
-    fun shareAsOsmFile(context: Context, edits: List<VoiceMapperEdit>) {
+    /** Writes a .osm file to the cache dir and returns a content URI for it. */
+    internal fun buildOsmFileUri(context: Context, edits: List<VoiceMapperEdit>): Uri {
         val xml = generateOsmXml(edits)
         val file = File(context.cacheDir, "scee_ai_export.osm")
         file.writeText(xml, Charsets.UTF_8)
-        val uri = FileProvider.getUriForFile(
+        return FileProvider.getUriForFile(
             context,
             context.getString(R.string.fileprovider_authority),
             file
         )
+    }
+
+    /** Writes a .osm file to the cache dir and opens the Android share sheet. */
+    fun shareAsOsmFile(context: Context, edits: List<VoiceMapperEdit>) {
+        val uri = buildOsmFileUri(context, edits)
         val intent = Intent(Intent.ACTION_SEND).apply {
             type = "application/xml"
             putExtra(Intent.EXTRA_STREAM, uri)
