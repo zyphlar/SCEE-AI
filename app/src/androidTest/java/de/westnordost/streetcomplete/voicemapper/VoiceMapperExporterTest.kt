@@ -90,6 +90,15 @@ class VoiceMapperExporterTest {
     }
 
     @Test
+    fun generateOsmChange_modifyWithElementKey_hasVersionOne() {
+        val key = ElementKey(ElementType.NODE, 12345L)
+        val xml = VoiceMapperExporter.generateOsmChange(listOf(
+            makeEdit(type = EditType.MODIFY_TAGS, elementKey = key)
+        ))
+        assertTrue(xml.contains("version=\"1\""), "existing element should have version=1 placeholder")
+    }
+
+    @Test
     fun generateOsmChange_createNode_hasLatLon() {
         val xml = VoiceMapperExporter.generateOsmChange(listOf(makeEdit(lat = 44.938, lon = -123.022)))
         assertTrue(xml.contains("lat=\"44.938\""), "should include latitude")

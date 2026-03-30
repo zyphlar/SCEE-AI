@@ -66,7 +66,7 @@ object VoiceMapperExporter {
                 val pos = edit.position
                 val tag = key.type.name.lowercase()
                 val posAttrs = if (pos != null) " lat=\"${pos.latitude}\" lon=\"${pos.longitude}\"" else ""
-                sb.append("    <$tag id=\"${key.id}\"$posAttrs version=\"0\" changeset=\"-1\">\n")
+                sb.append("    <$tag id=\"${key.id}\"$posAttrs version=\"1\" changeset=\"-1\">\n")
                 for ((k, v) in edit.tags) {
                     sb.append("      <tag k=\"${k.xmlEscape()}\" v=\"${v.xmlEscape()}\"/>\n")
                 }
@@ -86,7 +86,7 @@ object VoiceMapperExporter {
                 val pos = edit.position
                 val tag = key.type.name.lowercase()
                 val posAttrs = if (pos != null) " lat=\"${pos.latitude}\" lon=\"${pos.longitude}\"" else ""
-                sb.append("    <$tag id=\"${key.id}\"$posAttrs version=\"0\" changeset=\"-1\"/>\n")
+                sb.append("    <$tag id=\"${key.id}\"$posAttrs version=\"1\" changeset=\"-1\"/>\n")
             }
             sb.append("  </delete>\n")
         }
