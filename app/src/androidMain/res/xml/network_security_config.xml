@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Cleartext HTTP is permitted globally so that JOSM Remote Control (HTTP-only,
+  local network) works from both emulator (10.0.2.2) and physical devices (LAN IP).
+  All OSM API and tile traffic uses HTTPS regardless of this setting.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true">
+        <trust-anchors>
+            <certificates src="system"/>
+        </trust-anchors>
+    </base-config>
+</network-security-config>
