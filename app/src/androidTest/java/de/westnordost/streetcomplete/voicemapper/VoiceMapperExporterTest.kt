@@ -4,6 +4,7 @@ import androidx.test.platform.app.InstrumentationRegistry
 import de.westnordost.streetcomplete.data.osm.mapdata.ElementKey
 import de.westnordost.streetcomplete.data.osm.mapdata.ElementType
 import de.westnordost.streetcomplete.data.osm.mapdata.LatLon
+import de.westnordost.streetcomplete.data.osm.mapdata.RelationMember
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
@@ -20,14 +21,22 @@ class VoiceMapperExporterTest {
         tags: Map<String, String> = mapOf("amenity" to "bench"),
         description: String = "Test edit",
         transcription: String? = "add a bench here",
-        elementKey: ElementKey? = null
+        elementKey: ElementKey? = null,
+        elementVersion: Int? = null,
+        originalTags: Map<String, String> = emptyMap(),
+        wayNodeIds: List<Long> = emptyList(),
+        relationMembers: List<RelationMember> = emptyList()
     ) = VoiceMapperEdit(
         type = type,
         description = description,
         tags = tags,
         position = LatLon(lat, lon),
         sourceTranscription = transcription,
-        elementKey = elementKey
+        elementKey = elementKey,
+        elementVersion = elementVersion,
+        originalTags = originalTags,
+        wayNodeIds = wayNodeIds,
+        relationMembers = relationMembers
     )
 
     // ── FileProvider / cache path ──────────────────────────────────────────────
@@ -43,8 +52,13 @@ class VoiceMapperExporterTest {
     fun buildOsmFileUri_multipleEdits_doesNotThrow() {
         val edits = listOf(
             makeEdit(EditType.CREATE_NODE, tags = mapOf("amenity" to "bench")),
-            makeEdit(EditType.MODIFY_TAGS, tags = mapOf("name" to "Park"), elementKey = ElementKey(ElementType.NODE, 42L)),
-            makeEdit(EditType.DELETE_NODE, tags = emptyMap(), elementKey = ElementKey(ElementType.NODE, 99L))
+            makeEdit(EditType.MODIFY_TAGS, tags = mapOf("name" to "Park"),
+                elementKey = ElementKey(ElementType.NODE, 42L),
+                elementVersion = 3,
+                originalTags = mapOf("amenity" to "park")),
+            makeEdit(EditType.DELETE_NODE, tags = emptyMap(),
+                elementKey = ElementKey(ElementType.NODE, 99L),
+                elementVersion = 2)
         )
         val uri = VoiceMapperExporter.buildOsmFileUri(context, edits)
         assertNotNull(uri)
@@ -90,15 +104,6 @@ class VoiceMapperExporterTest {
     }
 
     @Test
-    fun generateOsmChange_modifyWithElementKey_hasVersionOne() {
-        val key = ElementKey(ElementType.NODE, 12345L)
-        val xml = VoiceMapperExporter.generateOsmChange(listOf(
-            makeEdit(type = EditType.MODIFY_TAGS, elementKey = key)
-        ))
-        assertTrue(xml.contains("version=\"1\""), "existing element should have version=1 placeholder")
-    }
-
-    @Test
     fun generateOsmChange_createNode_hasLatLon() {
         val xml = VoiceMapperExporter.generateOsmChange(listOf(makeEdit(lat = 44.938, lon = -123.022)))
         assertTrue(xml.contains("lat=\"44.938\""), "should include latitude")
@@ -127,13 +132,93 @@ class VoiceMapperExporterTest {
     }
 
     @Test
+    fun generateOsmChange_modifyUsesActualVersion() {
+        val key = ElementKey(ElementType.NODE, 12345L)
+        val xml = VoiceMapperExporter.generateOsmChange(listOf(
+            makeEdit(type = EditType.MODIFY_TAGS, elementKey = key, elementVersion = 7)
+        ))
+        assertTrue(xml.contains("version=\"7\""), "should use actual element version")
+    }
+
+    @Test
+    fun generateOsmChange_modifyFallsBackToVersion1WhenUnknown() {
+        val key = ElementKey(ElementType.NODE, 12345L)
+        val xml = VoiceMapperExporter.generateOsmChange(listOf(
+            makeEdit(type = EditType.MODIFY_TAGS, elementKey = key, elementVersion = null)
+        ))
+        assertTrue(xml.contains("version=\"1\""), "should fall back to version=1 when unknown")
+    }
+
+    @Test
+    fun generateOsmChange_modifyMergesOriginalAndNewTags() {
+        val key = ElementKey(ElementType.NODE, 12345L)
+        val xml = VoiceMapperExporter.generateOsmChange(listOf(
+            makeEdit(
+                type = EditType.MODIFY_TAGS,
+                elementKey = key,
+                tags = mapOf("addr:housenumber" to "42"),
+                originalTags = mapOf("highway" to "crossing", "addr:housenumber" to "41")
+            )
+        ))
+        assertTrue(xml.contains("highway"), "should preserve original tags")
+        assertTrue(xml.contains("crossing"), "should preserve original tag value")
+        assertTrue(xml.contains("addr:housenumber"), "should include changed tag")
+        assertTrue(xml.contains("\"42\""), "should use new tag value")
+        assertTrue(!xml.contains("\"41\""), "should not contain overwritten old value")
+    }
+
+    @Test
+    fun generateOsmChange_modifyIncludesWayNodeRefs() {
+        val key = ElementKey(ElementType.WAY, 71246816L)
+        val xml = VoiceMapperExporter.generateOsmChange(listOf(
+            makeEdit(
+                type = EditType.MODIFY_TAGS,
+                elementKey = key,
+                elementVersion = 5,
+                wayNodeIds = listOf(848107757L, 1163208486L, 848107757L)
+            )
+        ))
+        assertTrue(xml.contains("<nd ref=\"848107757\"/>"), "should include first node ref")
+        assertTrue(xml.contains("<nd ref=\"1163208486\"/>"), "should include middle node ref")
+    }
+
+    @Test
+    fun generateOsmChange_modifyWayHasNoLatLon() {
+        val key = ElementKey(ElementType.WAY, 555L)
+        val xml = VoiceMapperExporter.generateOsmChange(listOf(
+            makeEdit(type = EditType.MODIFY_TAGS, elementKey = key)
+        ))
+        // ways must not have lat/lon attributes
+        val wayLine = xml.lines().first { it.contains("<way ") }
+        assertTrue(!wayLine.contains("lat="), "way element should not have lat attribute")
+        assertTrue(!wayLine.contains("lon="), "way element should not have lon attribute")
+    }
+
+    @Test
+    fun generateOsmChange_modifyIncludesRelationMembers() {
+        val key = ElementKey(ElementType.RELATION, 999L)
+        val members = listOf(
+            RelationMember(ElementType.WAY, 111L, "outer"),
+            RelationMember(ElementType.WAY, 222L, "inner")
+        )
+        val xml = VoiceMapperExporter.generateOsmChange(listOf(
+            makeEdit(type = EditType.MODIFY_TAGS, elementKey = key, relationMembers = members)
+        ))
+        assertTrue(xml.contains("<relation "), "should produce relation element")
+        assertTrue(xml.contains("ref=\"111\""), "should include first member ref")
+        assertTrue(xml.contains("role=\"outer\""), "should include member role")
+        assertTrue(xml.contains("ref=\"222\""), "should include second member ref")
+    }
+
+    @Test
     fun generateOsmChange_deleteWithElementKey_goesInDeleteBlock() {
         val key = ElementKey(ElementType.NODE, 99L)
         val xml = VoiceMapperExporter.generateOsmChange(listOf(
-            makeEdit(type = EditType.DELETE_NODE, elementKey = key)
+            makeEdit(type = EditType.DELETE_NODE, elementKey = key, elementVersion = 4)
         ))
         assertTrue(xml.contains("<delete>"), "DELETE with elementKey should produce <delete> block")
         assertTrue(xml.contains("id=\"99\""), "should use real OSM element ID")
+        assertTrue(xml.contains("version=\"4\""), "should use actual version in delete")
         assertTrue(!xml.contains("<modify>"), "should not have modify block")
     }
 

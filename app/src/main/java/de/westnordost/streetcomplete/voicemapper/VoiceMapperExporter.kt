@@ -65,12 +65,23 @@ object VoiceMapperExporter {
                 val key = edit.elementKey!!
                 val pos = edit.position
                 val tag = key.type.name.lowercase()
-                val posAttrs = if (pos != null) " lat=\"${pos.latitude}\" lon=\"${pos.longitude}\"" else ""
-                sb.append("    <$tag id=\"${key.id}\"$posAttrs version=\"1\">\n")
-                for ((k, v) in edit.tags) {
+                // lat/lon only valid on nodes, not ways/relations
+                val posAttrs = if (pos != null && key.type.name == "NODE") " lat=\"${pos.latitude}\" lon=\"${pos.longitude}\"" else ""
+                val version = edit.elementVersion ?: 1
+                sb.append("    <$tag id=\"${key.id}\"$posAttrs version=\"$version\">\n")
+                // nd refs (ways only)
+                for (nodeId in edit.wayNodeIds) {
+                    sb.append("      <nd ref=\"$nodeId\"/>\n")
+                }
+                // relation members
+                for (member in edit.relationMembers) {
+                    sb.append("      <member type=\"${member.type.name.lowercase()}\" ref=\"${member.ref}\" role=\"${member.role.xmlEscape()}\"/>\n")
+                }
+                // full merged tag set: original tags + new tags - removed tags
+                val mergedTags = (edit.originalTags + edit.tags).filterKeys { it !in edit.tagsToRemove }
+                for ((k, v) in mergedTags) {
                     sb.append("      <tag k=\"${k.xmlEscape()}\" v=\"${v.xmlEscape()}\"/>\n")
                 }
-                sb.append("      <tag k=\"note\" v=\"${edit.description.xmlEscape()}\"/>\n")
                 edit.sourceTranscription?.let {
                     sb.append("      <tag k=\"voice_mapper:source\" v=\"${it.xmlEscape()}\"/>\n")
                 }
@@ -85,8 +96,9 @@ object VoiceMapperExporter {
                 val key = edit.elementKey!!
                 val pos = edit.position
                 val tag = key.type.name.lowercase()
-                val posAttrs = if (pos != null) " lat=\"${pos.latitude}\" lon=\"${pos.longitude}\"" else ""
-                sb.append("    <$tag id=\"${key.id}\"$posAttrs version=\"1\"/>\n")
+                val posAttrs = if (pos != null && key.type.name == "NODE") " lat=\"${pos.latitude}\" lon=\"${pos.longitude}\"" else ""
+                val version = edit.elementVersion ?: 1
+                sb.append("    <$tag id=\"${key.id}\"$posAttrs version=\"$version\"/>\n")
             }
             sb.append("  </delete>\n")
         }

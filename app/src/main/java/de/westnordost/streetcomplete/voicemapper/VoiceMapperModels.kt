@@ -3,6 +3,7 @@ package de.westnordost.streetcomplete.voicemapper
 import de.westnordost.streetcomplete.data.osm.mapdata.Element
 import de.westnordost.streetcomplete.data.osm.mapdata.ElementKey
 import de.westnordost.streetcomplete.data.osm.mapdata.LatLon
+import de.westnordost.streetcomplete.data.osm.mapdata.RelationMember
 import java.util.UUID
 
 /**
@@ -25,7 +26,12 @@ data class VoiceMapperEdit(
     val elementSearchName: String? = null,        // find by name/brand (fuzzy)
     val elementSearchTags: Map<String, String> = emptyMap(), // find by required tags (e.g. highway=crossing)
     val applyToAll: Boolean = false,              // if true, apply to ALL matching elements
-    val sourceTranscription: String? = null       // original voice/text input that created this edit
+    val sourceTranscription: String? = null,      // original voice/text input that created this edit
+    // Captured at resolution time for OsmChange export
+    val elementVersion: Int? = null,              // actual OSM version of the target element
+    val originalTags: Map<String, String> = emptyMap(), // full tag set on element before this edit
+    val wayNodeIds: List<Long> = emptyList(),     // nd refs if target is a Way
+    val relationMembers: List<RelationMember> = emptyList() // members if target is a Relation
 )
 
 enum class EditType {

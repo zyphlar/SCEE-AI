@@ -29,6 +29,7 @@ import de.westnordost.streetcomplete.data.osm.mapdata.BoundingBox
 import de.westnordost.streetcomplete.data.osm.mapdata.MapDataController
 import de.westnordost.streetcomplete.data.osm.mapdata.MutableMapDataWithGeometry
 import de.westnordost.streetcomplete.data.osm.mapdata.Node
+import de.westnordost.streetcomplete.data.osm.mapdata.Relation
 import de.westnordost.streetcomplete.data.osm.mapdata.Way
 import de.westnordost.streetcomplete.util.ktx.nowAsEpochMilliseconds
 import kotlinx.coroutines.*
@@ -427,7 +428,18 @@ class VoiceMapperService(
                             edit.elementKey != null -> {
                                 // AI specified exact element ID — resolve its position from nearby data
                                 val matchGeom = nearbyData.getGeometry(edit.elementKey.type, edit.elementKey.id)
-                                resolvedEdits.add(edit.copy(position = matchGeom?.center ?: edit.position))
+                                val element = when (edit.elementKey.type) {
+                                    ElementType.NODE -> nearbyData.getNode(edit.elementKey.id)
+                                    ElementType.WAY -> nearbyData.getWay(edit.elementKey.id)
+                                    ElementType.RELATION -> nearbyData.getRelation(edit.elementKey.id)
+                                }
+                                resolvedEdits.add(edit.copy(
+                                    position = matchGeom?.center ?: edit.position,
+                                    elementVersion = element?.version,
+                                    originalTags = element?.tags ?: emptyMap(),
+                                    wayNodeIds = (element as? Way)?.nodeIds ?: emptyList(),
+                                    relationMembers = (element as? Relation)?.members ?: emptyList()
+                                ))
                             }
                             edit.elementSearchName != null || edit.elementSearchTags.isNotEmpty() -> {
                                 // Use distanceAhead/side to compute a reference search position when set
@@ -445,6 +457,10 @@ class VoiceMapperService(
                                         resolvedEdits.add(edit.copy(
                                             elementKey = ElementKey(match.type, match.id),
                                             position = matchGeom?.center,
+                                            elementVersion = match.version,
+                                            originalTags = match.tags,
+                                            wayNodeIds = (match as? Way)?.nodeIds ?: emptyList(),
+                                            relationMembers = (match as? Relation)?.members ?: emptyList(),
                                             description = edit.description + " (${match.tags["name"] ?: match.tags["brand"] ?: "${match.type}/${match.id}"})"
                                         ))
                                     }
