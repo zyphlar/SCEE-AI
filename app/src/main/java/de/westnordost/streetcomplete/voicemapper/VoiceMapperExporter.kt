@@ -14,42 +14,91 @@ import java.net.URLEncoder
 
 object VoiceMapperExporter {
 
-    /** Generates an OSM XML document for the given pending edits.
+    /** Generates an OsmChange (.osc) document for the given pending edits.
      *
-     *  CREATE_NODE edits become new nodes with their resolved tags.
-     *  MODIFY/DELETE edits become placeholder nodes at the edit position
-     *  with a `fixme` tag describing the intended operation, since the
-     *  full existing element data isn't carried in VoiceMapperEdit.
+     *  CREATE_NODE edits go into <create> with new negative IDs.
+     *  MODIFY_TAGS / MODIFY_NODE edits with a known elementKey go into <modify>
+     *  using the real OSM element ID (version="0" as placeholder — JOSM fetches
+     *  the real version on load).
+     *  DELETE_NODE edits with a known elementKey go into <delete>.
+     *  Any non-create edit that lacks an elementKey falls back to <create> as a
+     *  note node so the intent is not silently lost.
      */
-    fun generateOsmXml(edits: List<VoiceMapperEdit>): String {
+    fun generateOsmChange(edits: List<VoiceMapperEdit>): String {
         val sb = StringBuilder()
         sb.append("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n")
-        sb.append("<osm version=\"0.6\">\n")
+        sb.append("<osmChange version=\"0.6\">\n")
+
+        val creates = edits.filter { it.type == EditType.CREATE_NODE || (it.type != EditType.CREATE_NODE && it.elementKey == null) }
+        val modifies = edits.filter { it.type in listOf(EditType.MODIFY_TAGS, EditType.MODIFY_NODE) && it.elementKey != null }
+        val deletes = edits.filter { it.type == EditType.DELETE_NODE && it.elementKey != null }
+
         var nextId = -1L
-        for (edit in edits) {
-            val pos = edit.position ?: continue
-            val id = nextId--
-            sb.append("  <node id=\"$id\" lat=\"${pos.latitude}\" lon=\"${pos.longitude}\" visible=\"true\">\n")
-            sb.append("    <tag k=\"note\" v=\"${edit.description.xmlEscape()}\"/>\n")
-            for ((k, v) in edit.tags) {
-                sb.append("    <tag k=\"${k.xmlEscape()}\" v=\"${v.xmlEscape()}\"/>\n")
+
+        if (creates.isNotEmpty()) {
+            sb.append("  <create>\n")
+            for (edit in creates) {
+                val pos = edit.position ?: continue
+                val id = nextId--
+                sb.append("    <node id=\"$id\" lat=\"${pos.latitude}\" lon=\"${pos.longitude}\" version=\"0\" changeset=\"-1\">\n")
+                for ((k, v) in edit.tags) {
+                    sb.append("      <tag k=\"${k.xmlEscape()}\" v=\"${v.xmlEscape()}\"/>\n")
+                }
+                if (edit.type != EditType.CREATE_NODE) {
+                    // fallback note node for edits without a resolved element
+                    sb.append("      <tag k=\"note\" v=\"${edit.description.xmlEscape()}\"/>\n")
+                    sb.append("      <tag k=\"fixme\" v=\"${edit.type.name.lowercase().replace('_', ' ')}\"/>\n")
+                } else {
+                    sb.append("      <tag k=\"note\" v=\"${edit.description.xmlEscape()}\"/>\n")
+                }
+                edit.sourceTranscription?.let {
+                    sb.append("      <tag k=\"voice_mapper:source\" v=\"${it.xmlEscape()}\"/>\n")
+                }
+                sb.append("    </node>\n")
             }
-            if (edit.type != EditType.CREATE_NODE) {
-                sb.append("    <tag k=\"fixme\" v=\"${edit.type.name.lowercase().replace('_', ' ')}\"/>\n")
-            }
-            edit.sourceTranscription?.let {
-                sb.append("    <tag k=\"voice_mapper:source\" v=\"${it.xmlEscape()}\"/>\n")
-            }
-            sb.append("  </node>\n")
+            sb.append("  </create>\n")
         }
-        sb.append("</osm>\n")
+
+        if (modifies.isNotEmpty()) {
+            sb.append("  <modify>\n")
+            for (edit in modifies) {
+                val key = edit.elementKey!!
+                val pos = edit.position
+                val tag = key.type.name.lowercase()
+                val posAttrs = if (pos != null) " lat=\"${pos.latitude}\" lon=\"${pos.longitude}\"" else ""
+                sb.append("    <$tag id=\"${key.id}\"$posAttrs version=\"0\" changeset=\"-1\">\n")
+                for ((k, v) in edit.tags) {
+                    sb.append("      <tag k=\"${k.xmlEscape()}\" v=\"${v.xmlEscape()}\"/>\n")
+                }
+                sb.append("      <tag k=\"note\" v=\"${edit.description.xmlEscape()}\"/>\n")
+                edit.sourceTranscription?.let {
+                    sb.append("      <tag k=\"voice_mapper:source\" v=\"${it.xmlEscape()}\"/>\n")
+                }
+                sb.append("    </$tag>\n")
+            }
+            sb.append("  </modify>\n")
+        }
+
+        if (deletes.isNotEmpty()) {
+            sb.append("  <delete>\n")
+            for (edit in deletes) {
+                val key = edit.elementKey!!
+                val pos = edit.position
+                val tag = key.type.name.lowercase()
+                val posAttrs = if (pos != null) " lat=\"${pos.latitude}\" lon=\"${pos.longitude}\"" else ""
+                sb.append("    <$tag id=\"${key.id}\"$posAttrs version=\"0\" changeset=\"-1\"/>\n")
+            }
+            sb.append("  </delete>\n")
+        }
+
+        sb.append("</osmChange>\n")
         return sb.toString()
     }
 
-    /** Writes a .osm file to the cache dir and returns a content URI for it. */
+    /** Writes a .osc file to the cache dir and returns a content URI for it. */
     internal fun buildOsmFileUri(context: Context, edits: List<VoiceMapperEdit>): Uri {
-        val xml = generateOsmXml(edits)
-        val file = File(context.cacheDir, "scee_ai_export.osm")
+        val xml = generateOsmChange(edits)
+        val file = File(context.cacheDir, "scee_ai_export.osc")
         file.writeText(xml, Charsets.UTF_8)
         return FileProvider.getUriForFile(
             context,
@@ -62,7 +111,7 @@ object VoiceMapperExporter {
     fun shareAsOsmFile(context: Context, edits: List<VoiceMapperEdit>) {
         val uri = buildOsmFileUri(context, edits)
         val intent = Intent(Intent.ACTION_SEND).apply {
-            type = "application/xml"
+            type = "application/x-osm+xml"
             putExtra(Intent.EXTRA_STREAM, uri)
             putExtra(Intent.EXTRA_SUBJECT, "SCEE-AI pending edits")
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
@@ -78,7 +127,7 @@ object VoiceMapperExporter {
     suspend fun sendToJosm(edits: List<VoiceMapperEdit>, host: String, port: Int): Result<Unit> =
         withContext(Dispatchers.IO) {
             try {
-                val xml = generateOsmXml(edits)
+                val xml = generateOsmChange(edits)
                 val encoded = URLEncoder.encode(xml, "UTF-8")
                 val url = URL("http://$host:$port/load_data?new_layer=true&data=$encoded")
                 val conn = url.openConnection() as HttpURLConnection
