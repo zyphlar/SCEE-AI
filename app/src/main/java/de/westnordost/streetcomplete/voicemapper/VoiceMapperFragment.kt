@@ -446,11 +446,11 @@ class VoiceMapperFragment : Fragment(), IsCloseableBottomSheet, IsMapOrientation
         }
         AlertDialog.Builder(requireContext())
             .setTitle("Export ${edits.size} pending edit${if (edits.size == 1) "" else "s"}")
-            .setItems(arrayOf("Share as .osm file", "Send to JOSM", "Open iD in browser")) { _, which ->
+            .setItems(arrayOf("Share as .osm file", "Share as .osc file", "Send to JOSM")) { _, which ->
                 when (which) {
                     0 -> VoiceMapperExporter.shareAsOsmFile(requireContext(), edits)
-                    1 -> showJosmDialog(edits)
-                    2 -> VoiceMapperExporter.openInId(requireContext(), edits)
+                    1 -> VoiceMapperExporter.shareAsOscFile(requireContext(), edits)
+                    2 -> showJosmDialog(edits)
                 }
             }
             .setNegativeButton("Cancel", null)

@@ -433,11 +433,13 @@ class VoiceMapperService(
                                     ElementType.WAY -> nearbyData.getWay(edit.elementKey.id)
                                     ElementType.RELATION -> nearbyData.getRelation(edit.elementKey.id)
                                 }
+                                val wayNodes = (element as? Way)?.nodeIds ?: emptyList()
                                 resolvedEdits.add(edit.copy(
                                     position = matchGeom?.center ?: edit.position,
                                     elementVersion = element?.version,
                                     originalTags = element?.tags ?: emptyMap(),
-                                    wayNodeIds = (element as? Way)?.nodeIds ?: emptyList(),
+                                    wayNodeIds = wayNodes,
+                                    nodePositions = wayNodes.mapNotNull { id -> nearbyData.getNode(id)?.let { id to it.position } }.toMap(),
                                     relationMembers = (element as? Relation)?.members ?: emptyList()
                                 ))
                             }
@@ -454,12 +456,14 @@ class VoiceMapperService(
                                 } else {
                                     for (match in matches) {
                                         val matchGeom = nearbyData.getGeometry(match.type, match.id)
+                                        val wayNodes = (match as? Way)?.nodeIds ?: emptyList()
                                         resolvedEdits.add(edit.copy(
                                             elementKey = ElementKey(match.type, match.id),
                                             position = matchGeom?.center,
                                             elementVersion = match.version,
                                             originalTags = match.tags,
-                                            wayNodeIds = (match as? Way)?.nodeIds ?: emptyList(),
+                                            wayNodeIds = wayNodes,
+                                            nodePositions = wayNodes.mapNotNull { id -> nearbyData.getNode(id)?.let { id to it.position } }.toMap(),
                                             relationMembers = (match as? Relation)?.members ?: emptyList(),
                                             description = edit.description + " (${match.tags["name"] ?: match.tags["brand"] ?: "${match.type}/${match.id}"})"
                                         ))

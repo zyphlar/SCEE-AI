@@ -65,9 +65,9 @@ class VoiceMapperExporterTest {
     }
 
     @Test
-    fun buildOsmFileUri_writesReadableOscFile() {
+    fun buildOsmFileUri_writesReadableOsmFile() {
         VoiceMapperExporter.buildOsmFileUri(context, listOf(makeEdit()))
-        val file = java.io.File(context.cacheDir, "scee_ai_export.osc")
+        val file = java.io.File(context.cacheDir, "scee_ai_export.osm")
         assertTrue(file.exists(), "cache file should exist after export")
         assertTrue(file.length() > 0, "cache file should not be empty")
     }

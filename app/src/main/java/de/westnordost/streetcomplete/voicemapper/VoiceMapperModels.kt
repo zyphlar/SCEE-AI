@@ -31,6 +31,7 @@ data class VoiceMapperEdit(
     val elementVersion: Int? = null,              // actual OSM version of the target element
     val originalTags: Map<String, String> = emptyMap(), // full tag set on element before this edit
     val wayNodeIds: List<Long> = emptyList(),     // nd refs if target is a Way
+    val nodePositions: Map<Long, LatLon> = emptyMap(), // positions of referenced nodes (for .osm export)
     val relationMembers: List<RelationMember> = emptyList() // members if target is a Relation
 )
 

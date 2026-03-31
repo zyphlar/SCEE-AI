@@ -5,6 +5,7 @@ import android.content.Intent
 import android.net.Uri
 import androidx.core.content.FileProvider
 import de.westnordost.streetcomplete.R
+import de.westnordost.streetcomplete.data.osm.mapdata.ElementType
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -14,15 +15,108 @@ import java.net.URLEncoder
 
 object VoiceMapperExporter {
 
-    /** Generates an OsmChange (.osc) document for the given pending edits.
+    /**
+     * Generates a standalone OSM (.osm) document for the given pending edits.
      *
-     *  CREATE_NODE edits go into <create> with new negative IDs.
-     *  MODIFY_TAGS / MODIFY_NODE edits with a known elementKey go into <modify>
-     *  using the real OSM element ID (version="0" as placeholder — JOSM fetches
-     *  the real version on load).
-     *  DELETE_NODE edits with a known elementKey go into <delete>.
-     *  Any non-create edit that lacks an elementKey falls back to <create> as a
-     *  note node so the intent is not silently lost.
+     * Suitable for opening directly in JOSM — all geometry is self-contained:
+     *   CREATE_NODE  → new node with tags at the recorded position
+     *   MODIFY       → element with its real OSM ID, merged tags, and (for ways) all
+     *                  referenced nodes embedded with their actual lat/lon positions
+     *   DELETE       → placeholder node at the centroid with a fixme tag (safe for review)
+     *   fallback     → placeholder note node for edits without a resolved element
+     */
+    fun generateOsmXml(edits: List<VoiceMapperEdit>): String {
+        val sb = StringBuilder()
+        sb.append("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n")
+        sb.append("<osm version=\"0.6\">\n")
+        var nextId = -1L
+
+        // Collect all referenced node positions across all edits (for way geometry)
+        val allNodePositions = edits.fold(mutableMapOf<Long, de.westnordost.streetcomplete.data.osm.mapdata.LatLon>()) { acc, edit ->
+            acc.putAll(edit.nodePositions); acc
+        }
+        for ((nodeId, pos) in allNodePositions) {
+            sb.append("  <node id=\"$nodeId\" lat=\"${pos.latitude}\" lon=\"${pos.longitude}\" version=\"1\" visible=\"true\"/>\n")
+        }
+
+        for (edit in edits) {
+            val pos = edit.position ?: continue
+            val key = edit.elementKey
+            val version = edit.elementVersion ?: 1
+
+            when {
+                edit.type == EditType.CREATE_NODE -> {
+                    val id = nextId--
+                    sb.append("  <node id=\"$id\" lat=\"${pos.latitude}\" lon=\"${pos.longitude}\" version=\"0\" visible=\"true\">\n")
+                    for ((k, v) in edit.tags) {
+                        sb.append("    <tag k=\"${k.xmlEscape()}\" v=\"${v.xmlEscape()}\"/>\n")
+                    }
+                    sb.append("    <tag k=\"note\" v=\"${edit.description.xmlEscape()}\"/>\n")
+                    edit.sourceTranscription?.let {
+                        sb.append("    <tag k=\"voice_mapper:source\" v=\"${it.xmlEscape()}\"/>\n")
+                    }
+                    sb.append("  </node>\n")
+                }
+
+                key != null && edit.type in listOf(EditType.MODIFY_TAGS, EditType.MODIFY_NODE) -> {
+                    val tag = key.type.name.lowercase()
+                    val posAttrs = if (key.type == ElementType.NODE) " lat=\"${pos.latitude}\" lon=\"${pos.longitude}\"" else ""
+                    sb.append("  <$tag id=\"${key.id}\"$posAttrs version=\"$version\" visible=\"true\">\n")
+                    for (nodeId in edit.wayNodeIds) {
+                        sb.append("    <nd ref=\"$nodeId\"/>\n")
+                    }
+                    for (member in edit.relationMembers) {
+                        sb.append("    <member type=\"${member.type.name.lowercase()}\" ref=\"${member.ref}\" role=\"${member.role.xmlEscape()}\"/>\n")
+                    }
+                    val mergedTags = (edit.originalTags + edit.tags).filterKeys { it !in edit.tagsToRemove }
+                    for ((k, v) in mergedTags) {
+                        sb.append("    <tag k=\"${k.xmlEscape()}\" v=\"${v.xmlEscape()}\"/>\n")
+                    }
+                    edit.sourceTranscription?.let {
+                        sb.append("    <tag k=\"voice_mapper:source\" v=\"${it.xmlEscape()}\"/>\n")
+                    }
+                    sb.append("  </$tag>\n")
+                }
+
+                key != null && edit.type == EditType.DELETE_NODE -> {
+                    // Placeholder node so the location is visible; reviewer handles the actual delete
+                    val id = nextId--
+                    sb.append("  <node id=\"$id\" lat=\"${pos.latitude}\" lon=\"${pos.longitude}\" version=\"0\" visible=\"true\">\n")
+                    sb.append("    <tag k=\"fixme\" v=\"delete ${key.type.name.lowercase()} ${key.id}\"/>\n")
+                    sb.append("    <tag k=\"note\" v=\"${edit.description.xmlEscape()}\"/>\n")
+                    edit.sourceTranscription?.let {
+                        sb.append("    <tag k=\"voice_mapper:source\" v=\"${it.xmlEscape()}\"/>\n")
+                    }
+                    sb.append("  </node>\n")
+                }
+
+                else -> {
+                    // Fallback: no resolved element — placeholder note node
+                    val id = nextId--
+                    sb.append("  <node id=\"$id\" lat=\"${pos.latitude}\" lon=\"${pos.longitude}\" version=\"0\" visible=\"true\">\n")
+                    sb.append("    <tag k=\"note\" v=\"${edit.description.xmlEscape()}\"/>\n")
+                    sb.append("    <tag k=\"fixme\" v=\"${edit.type.name.lowercase().replace('_', ' ')}\"/>\n")
+                    edit.sourceTranscription?.let {
+                        sb.append("    <tag k=\"voice_mapper:source\" v=\"${it.xmlEscape()}\"/>\n")
+                    }
+                    sb.append("  </node>\n")
+                }
+            }
+        }
+
+        sb.append("</osm>\n")
+        return sb.toString()
+    }
+
+    /**
+     * Generates an OsmChange (.osc) document for the given pending edits.
+     *
+     * Suitable for JOSM Remote Control (load_data) or technical import workflows.
+     * JOSM must have the affected area already downloaded to render modified elements.
+     *   CREATE_NODE  → <create> with negative IDs
+     *   MODIFY       → <modify> with real element ID, actual version, merged tags, nd refs
+     *   DELETE       → <delete> with real element ID and version
+     *   fallback     → <create> note node for unresolved edits
      */
     fun generateOsmChange(edits: List<VoiceMapperEdit>): String {
         val sb = StringBuilder()
@@ -45,7 +139,6 @@ object VoiceMapperExporter {
                     sb.append("      <tag k=\"${k.xmlEscape()}\" v=\"${v.xmlEscape()}\"/>\n")
                 }
                 if (edit.type != EditType.CREATE_NODE) {
-                    // fallback note node for edits without a resolved element
                     sb.append("      <tag k=\"note\" v=\"${edit.description.xmlEscape()}\"/>\n")
                     sb.append("      <tag k=\"fixme\" v=\"${edit.type.name.lowercase().replace('_', ' ')}\"/>\n")
                 } else {
@@ -65,19 +158,15 @@ object VoiceMapperExporter {
                 val key = edit.elementKey!!
                 val pos = edit.position
                 val tag = key.type.name.lowercase()
-                // lat/lon only valid on nodes, not ways/relations
-                val posAttrs = if (pos != null && key.type.name == "NODE") " lat=\"${pos.latitude}\" lon=\"${pos.longitude}\"" else ""
+                val posAttrs = if (pos != null && key.type == ElementType.NODE) " lat=\"${pos.latitude}\" lon=\"${pos.longitude}\"" else ""
                 val version = edit.elementVersion ?: 1
                 sb.append("    <$tag id=\"${key.id}\"$posAttrs version=\"$version\">\n")
-                // nd refs (ways only)
                 for (nodeId in edit.wayNodeIds) {
                     sb.append("      <nd ref=\"$nodeId\"/>\n")
                 }
-                // relation members
                 for (member in edit.relationMembers) {
                     sb.append("      <member type=\"${member.type.name.lowercase()}\" ref=\"${member.ref}\" role=\"${member.role.xmlEscape()}\"/>\n")
                 }
-                // full merged tag set: original tags + new tags - removed tags
                 val mergedTags = (edit.originalTags + edit.tags).filterKeys { it !in edit.tagsToRemove }
                 for ((k, v) in mergedTags) {
                     sb.append("      <tag k=\"${k.xmlEscape()}\" v=\"${v.xmlEscape()}\"/>\n")
@@ -96,7 +185,7 @@ object VoiceMapperExporter {
                 val key = edit.elementKey!!
                 val pos = edit.position
                 val tag = key.type.name.lowercase()
-                val posAttrs = if (pos != null && key.type.name == "NODE") " lat=\"${pos.latitude}\" lon=\"${pos.longitude}\"" else ""
+                val posAttrs = if (pos != null && key.type == ElementType.NODE) " lat=\"${pos.latitude}\" lon=\"${pos.longitude}\"" else ""
                 val version = edit.elementVersion ?: 1
                 sb.append("    <$tag id=\"${key.id}\"$posAttrs version=\"$version\"/>\n")
             }
@@ -107,21 +196,37 @@ object VoiceMapperExporter {
         return sb.toString()
     }
 
-    /** Writes a .osc file to the cache dir and returns a content URI for it. */
+    /** Writes a .osm file to the cache dir and returns a content URI for it. */
     internal fun buildOsmFileUri(context: Context, edits: List<VoiceMapperEdit>): Uri {
+        val xml = generateOsmXml(edits)
+        val file = File(context.cacheDir, "scee_ai_export.osm")
+        file.writeText(xml, Charsets.UTF_8)
+        return FileProvider.getUriForFile(context, context.getString(R.string.fileprovider_authority), file)
+    }
+
+    /** Writes a .osc file to the cache dir and returns a content URI for it. */
+    internal fun buildOscFileUri(context: Context, edits: List<VoiceMapperEdit>): Uri {
         val xml = generateOsmChange(edits)
         val file = File(context.cacheDir, "scee_ai_export.osc")
         file.writeText(xml, Charsets.UTF_8)
-        return FileProvider.getUriForFile(
-            context,
-            context.getString(R.string.fileprovider_authority),
-            file
-        )
+        return FileProvider.getUriForFile(context, context.getString(R.string.fileprovider_authority), file)
     }
 
-    /** Writes a .osm file to the cache dir and opens the Android share sheet. */
+    /** Shares a standalone .osm file via the Android share sheet (opens directly in JOSM). */
     fun shareAsOsmFile(context: Context, edits: List<VoiceMapperEdit>) {
         val uri = buildOsmFileUri(context, edits)
+        val intent = Intent(Intent.ACTION_SEND).apply {
+            type = "application/x-osm+xml"
+            putExtra(Intent.EXTRA_STREAM, uri)
+            putExtra(Intent.EXTRA_SUBJECT, "SCEE-AI pending edits")
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+        context.startActivity(Intent.createChooser(intent, "Export pending edits"))
+    }
+
+    /** Shares an OsmChange .osc file via the Android share sheet. */
+    fun shareAsOscFile(context: Context, edits: List<VoiceMapperEdit>) {
+        val uri = buildOscFileUri(context, edits)
         val intent = Intent(Intent.ACTION_SEND).apply {
             type = "application/x-osm+xml"
             putExtra(Intent.EXTRA_STREAM, uri)
@@ -152,16 +257,6 @@ object VoiceMapperExporter {
                 Result.failure(e)
             }
         }
-
-    /** Opens the iD web editor in a browser, centred on the mean position of the edits. */
-    fun openInId(context: Context, edits: List<VoiceMapperEdit>) {
-        val positions = edits.mapNotNull { it.position }
-        if (positions.isEmpty()) return
-        val lat = positions.map { it.latitude }.average()
-        val lon = positions.map { it.longitude }.average()
-        val uri = Uri.parse("https://www.openstreetmap.org/edit?editor=id#map=18/$lat/$lon")
-        context.startActivity(Intent(Intent.ACTION_VIEW, uri))
-    }
 
     private fun String.xmlEscape() = replace("&", "&amp;")
         .replace("<", "&lt;")
